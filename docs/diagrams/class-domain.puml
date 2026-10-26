@@ -1,0 +1,136 @@
+@startuml
+!pragma layout smetana
+skinparam shadowing false
+skinparam defaultFontName "Noto Sans"
+skinparam class {
+  BackgroundColor #FFFDF8
+  BorderColor #5D4037
+  ArrowColor #5D4037
+}
+hide circle
+
+class User {
+  +UUID id
+  +String email
+  +String passwordHash
+  +UserRole role
+  +DateTime createdAt
+}
+
+class Product {
+  +UUID id
+  +String name
+  +Decimal basePrice
+  +String imageUrl
+  +Boolean isAvailable
+}
+
+class ProductOption {
+  +UUID id
+  +OptionType type
+  +String name
+  +Decimal extraPrice
+}
+
+class Inventory {
+  +UUID id
+  +Int quantity
+  +Int reserved
+  +DateTime updatedAt
+}
+
+class Order {
+  +UUID id
+  +OrderStatus status
+  +Decimal subtotal
+  +Decimal discount
+  +Decimal total
+  +DateTime createdAt
+}
+
+class OrderItem {
+  +UUID id
+  +String productNameSnapshot
+  +Decimal unitPriceSnapshot
+  +Int quantity
+  +String optionsSnapshot
+}
+
+class Payment {
+  +UUID id
+  +PaymentMethod method
+  +PaymentStatus status
+  +String idempotencyKey
+  +Decimal amount
+}
+
+class Promotion {
+  +UUID id
+  +String code
+  +DiscountType type
+  +Decimal value
+  +DateTime expiresAt
+}
+
+class LoyaltyTransaction {
+  +UUID id
+  +Int points
+  +LoyaltyType type
+  +DateTime createdAt
+}
+
+enum UserRole {
+  CUSTOMER
+  BARISTA
+  MANAGER
+}
+enum OrderStatus {
+  PENDING
+  PAID
+  PAYMENT_FAILED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+enum PaymentStatus {
+  PROCESSING
+  PAID
+  FAILED
+  UNKNOWN
+}
+enum PaymentMethod {
+  WALLET
+  CARD
+}
+enum OptionType {
+  SIZE
+  TOPPING
+}
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+enum LoyaltyType {
+  EARN
+  REDEEM
+  REVERSE
+}
+
+User "1" -- "0..*" Order : places
+Order "1" *-- "1..*" OrderItem
+Order "1" -- "0..*" Payment
+Product "1" -- "0..*" OrderItem : snapshot from
+Product "1" *-- "0..*" ProductOption
+Product "1" -- "1" Inventory
+Order "0..*" -- "0..1" Promotion : applies
+User "1" -- "0..*" LoyaltyTransaction
+Order "0..1" -- "0..*" LoyaltyTransaction
+User --> UserRole
+Order --> OrderStatus
+Payment --> PaymentStatus
+Payment --> PaymentMethod
+ProductOption --> OptionType
+Promotion --> DiscountType
+LoyaltyTransaction --> LoyaltyType
+@enduml

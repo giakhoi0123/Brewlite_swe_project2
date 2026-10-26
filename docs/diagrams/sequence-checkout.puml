@@ -1,0 +1,64 @@
+@startuml
+skinparam shadowing false
+skinparam defaultFontName "Noto Sans"
+skinparam sequence {
+  ArrowColor #5D4037
+  LifeLineBorderColor #5D4037
+  ParticipantBorderColor #5D4037
+  ParticipantBackgroundColor #FFFDF8
+}
+
+actor Customer
+participant "Next.js UI" as UI
+participant "NestJS API" as API
+database "PostgreSQL" as DB
+participant "Payment Service\n(Mock)" as Pay
+
+Customer -> UI: Xác nhận checkout
+UI -> API: POST /orders + JWT + cart DTO
+API -> API: Verify JWT, validate DTO, tính lại giá
+
+alt Chưa đăng nhập / JWT không hợp lệ
+  API --> UI: 401 Unauthorized
+  UI --> Customer: Chuyển /login rồi quay lại checkout
+else JWT hợp lệ
+  API -> DB: BEGIN; khóa và kiểm tra tồn kho
+  alt Hết hàng / xung đột
+    DB --> API: Không đủ tồn kho
+    API -> DB: ROLLBACK
+    API --> UI: 409 Conflict
+    UI --> Customer: Thông báo hết hàng
+  else Đủ hàng
+    API -> DB: Giữ kho; INSERT Order PENDING + OrderItem
+    API -> DB: COMMIT
+    DB --> API: orderId
+    API --> UI: 201 Created + orderId
+
+    UI -> API: POST /payments\norderId, method, Idempotency-Key
+    API -> DB: Tìm Payment theo Idempotency-Key
+    alt Khóa đã tồn tại
+      DB --> API: Kết quả thanh toán đã lưu
+      API --> UI: Trả lại cùng kết quả
+    else Khóa mới
+      API -> DB: INSERT Payment PROCESSING
+      API -> Pay: pay(orderId, amount, method)
+      alt Thanh toán thành công
+        Pay --> API: PAID
+        API -> DB: BEGIN; Payment=PAID; Order=PAID; COMMIT
+        API --> UI: 200 PAID + confirmation
+        UI --> Customer: Xóa giỏ, hiển thị mã đơn
+      else Thanh toán thất bại
+        Pay --> API: FAILED
+        API -> DB: BEGIN; Payment=FAILED;\nOrder=PAYMENT_FAILED; hoàn kho 1 lần; COMMIT
+        API --> UI: 402/422 + reason
+        UI --> Customer: Cho phép thử lại với key mới
+      else Timeout / UNKNOWN
+        Pay --> API: timeout
+        API -> DB: Giữ Order=PENDING để đối soát
+        API --> UI: 202 Processing/Unknown
+        UI --> Customer: Thông báo đang xác minh
+      end
+    end
+  end
+end
+@enduml
