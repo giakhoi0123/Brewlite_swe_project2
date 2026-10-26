@@ -1,0 +1,53 @@
+@startuml
+!pragma layout smetana
+skinparam shadowing false
+skinparam defaultFontName "Noto Sans"
+skinparam node {
+  BackgroundColor #FFFDF8
+  BorderColor #5D4037
+}
+
+node "Thiết bị người dùng" as client {
+  artifact "Browser / PWA" as pwa
+}
+
+cloud "Internet" as internet
+
+node "Production Platform\n[CẬP NHẬT TÊN NỀN TẢNG THỰC TẾ]" as prod {
+  node "Web/CDN" as web {
+    artifact "Next.js" as next
+  }
+  node "Container Runtime" as api {
+    artifact "NestJS API\nGET /health" as nest
+  }
+  database "Managed PostgreSQL" as db {
+    artifact "Persistent Volume\nMigrations" as storage
+  }
+  artifact "Central Logs" as logs
+  artifact "Secrets / Env Vars" as secrets
+}
+
+node "GitHub" as github {
+  artifact "Repository" as repo
+  artifact "GitHub Actions CI/CD" as actions
+}
+
+cloud "Container Registry\n[CẬP NHẬT REGISTRY THỰC TẾ]" as registry
+node "Môi trường local" as local {
+  artifact "docker-compose:\nweb + api + postgres" as compose
+}
+
+pwa --> internet : HTTPS 443
+internet --> next : HTTPS 443
+next --> nest : HTTPS / REST JSON
+nest --> db : TLS / 5432 (private)
+nest --> logs : stdout / structured log
+secrets ..> next
+secrets ..> nest
+repo --> actions : push / PR / tag
+actions --> registry : push image SHA/tag
+registry --> api : pull image
+actions --> prod : deploy + migrate + smoke test
+actions --> nest : GET /health
+repo --> compose : clone / local build
+@enduml
