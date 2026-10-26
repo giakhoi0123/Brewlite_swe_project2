@@ -1,0 +1,86 @@
+@startuml
+skinparam shadowing false
+skinparam defaultFontName "Noto Sans"
+skinparam activity {
+  BackgroundColor #FFFDF8
+  BorderColor #5D4037
+  DiamondBackgroundColor #F5E9DA
+  DiamondBorderColor #5D4037
+  ArrowColor #5D4037
+}
+
+|Khách hàng|
+start
+:Mở giỏ hàng và chọn thanh toán;
+
+|Next.js UI|
+:Hiển thị tóm tắt đơn;
+if (Có JWT hợp lệ?) then (Không)
+  :Chuyển đến đăng nhập;
+  |Khách hàng|
+  :Đăng nhập;
+  |Next.js UI|
+  :Quay lại checkout;
+endif
+:Gửi POST /orders;
+
+|NestJS API|
+:Xác thực JWT và validate DTO;
+:Tính lại giá phía server;
+
+|PostgreSQL|
+:Bắt đầu transaction;
+:Khóa/kiểm tra tồn kho;
+if (Đủ hàng?) then (Không)
+  :Rollback transaction;
+  |NestJS API|
+  :Trả 409 Conflict;
+  |Next.js UI|
+  :Thông báo hết/thiếu hàng;
+  stop
+else (Có)
+  :Giữ tồn kho, lưu Order PENDING\nvà OrderItem snapshot;
+  :Commit transaction;
+endif
+
+|Next.js UI|
+:Sinh Idempotency-Key;
+:Gửi POST /payments;
+
+|NestJS API|
+:Kiểm tra chủ sở hữu đơn và khóa chống lặp;
+if (Đã xử lý khóa này?) then (Có)
+  :Trả lại kết quả đã lưu;
+else (Chưa)
+  :Lưu Payment PROCESSING;
+  |Payment Service|
+  :Xử lý thanh toán mô phỏng;
+  if (Kết quả?) then (PAID)
+    |NestJS API|
+    :Cập nhật Payment và Order = PAID;
+    |Next.js UI|
+    :Xóa giỏ và hiển thị mã đơn;
+    |Khách hàng|
+    :Theo dõi trạng thái đơn;
+    stop
+  elseif (FAILED)
+    |NestJS API|
+    :Cập nhật PAYMENT_FAILED;
+    |PostgreSQL|
+    :Hoàn tồn kho đúng một lần;
+    |Next.js UI|
+    :Thông báo thất bại và cho thử lại;
+    stop
+  else (TIMEOUT/UNKNOWN)
+    |NestJS API|
+    :Giữ Order PENDING để đối soát;
+    |Next.js UI|
+    :Thông báo đang xác minh;
+    stop
+  endif
+endif
+
+|Next.js UI|
+:Hiển thị kết quả đã lưu;
+stop
+@enduml
