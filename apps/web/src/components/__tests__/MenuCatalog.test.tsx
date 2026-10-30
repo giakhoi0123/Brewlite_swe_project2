@@ -29,7 +29,7 @@ describe('MenuCatalog Component', () => {
     expect(screen.getByTestId('loading-state')).toBeInTheDocument();
   });
 
-  it('renders products grid when fetching succeeds', async () => {
+  it('renders products grid when fetching succeeds, with clean read-only cards without dead action buttons (FIX-04)', async () => {
     const successFetch = jest.fn().mockResolvedValue(mockProducts);
 
     render(<MenuCatalog fetchProducts={successFetch} />);
@@ -41,6 +41,9 @@ describe('MenuCatalog Component', () => {
     expect(screen.getByTestId('product-grid')).toBeInTheDocument();
     expect(screen.getByText('Cà phê Đen Đá')).toBeInTheDocument();
     expect(screen.getByText('Trà Đào Cam Sả')).toBeInTheDocument();
+
+    // Verify FIX-04: Thẻ trong MenuCatalog không có nút 'Chọn món' vô tác dụng
+    expect(screen.queryByRole('button', { name: /chọn/i })).not.toBeInTheDocument();
   });
 
   it('renders empty state when products array is empty', async () => {
@@ -107,4 +110,3 @@ describe('MenuCatalog Component', () => {
     });
   });
 });
-

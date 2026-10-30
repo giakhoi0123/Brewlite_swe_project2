@@ -20,20 +20,34 @@ describe('ProductCard Component', () => {
     isAvailable: false,
   };
 
-  it('renders product information accurately with formatted VND currency', () => {
+  it('renders read-only product information accurately with NO action button when onClick handler is omitted', () => {
     render(<ProductCard product={availableProduct} />);
 
     expect(screen.getByText('Cà phê Sữa Đá')).toBeInTheDocument();
     expect(screen.getByText('29.000 đ')).toBeInTheDocument();
     expect(screen.getByText('Còn hàng')).toBeInTheDocument();
 
-    const button = screen.getByRole('button', { name: /Chọn mua Cà phê Sữa Đá/i });
-    expect(button).toBeEnabled();
-    expect(button).toHaveTextContent('Chọn món');
+    // Verify FIX-04: Không tồn tại nút bấm vô tác dụng khi không có handler
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
-  it('renders unavailable state with disabled button and correct badge', () => {
-    render(<ProductCard product={unavailableProduct} />);
+  it('renders action button and triggers callback when onClick handler is provided and product is available', () => {
+    const handleClick = jest.fn();
+    render(<ProductCard product={availableProduct} onClick={handleClick} />);
+
+    const button = screen.getByRole('button', { name: /Chọn mua Cà phê Sữa Đá/i });
+    expect(button).toBeInTheDocument();
+    expect(button).toBeEnabled();
+    expect(button).toHaveTextContent('Chọn món');
+
+    fireEvent.click(button);
+    expect(handleClick).toHaveBeenCalledTimes(1);
+    expect(handleClick).toHaveBeenCalledWith(availableProduct);
+  });
+
+  it('disables action button and prevents click invocation when product is unavailable', () => {
+    const handleClick = jest.fn();
+    render(<ProductCard product={unavailableProduct} onClick={handleClick} />);
 
     expect(screen.getByText('Cold Brew Cam Sả')).toBeInTheDocument();
     expect(screen.getByText('45.000 đ')).toBeInTheDocument();
@@ -42,6 +56,9 @@ describe('ProductCard Component', () => {
     const button = screen.getByRole('button', { name: /Cold Brew Cam Sả hiện đã hết/i });
     expect(button).toBeDisabled();
     expect(button).toHaveTextContent('Tạm hết');
+
+    fireEvent.click(button);
+    expect(handleClick).not.toHaveBeenCalled();
   });
 
   it('switches to fallback image when image load fails', () => {
@@ -55,15 +72,4 @@ describe('ProductCard Component', () => {
 
     expect(img.src).toContain('images.unsplash.com');
   });
-
-  it('fires onClick callback when button is clicked on available item', () => {
-    const handleClick = jest.fn();
-    render(<ProductCard product={availableProduct} onClick={handleClick} />);
-
-    const button = screen.getByRole('button', { name: /Chọn mua Cà phê Sữa Đá/i });
-    fireEvent.click(button);
-
-    expect(handleClick).toHaveBeenCalledWith(availableProduct);
-  });
 });
-

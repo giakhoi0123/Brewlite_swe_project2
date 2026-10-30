@@ -23,6 +23,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onClick }) =>
     }
   };
 
+  const hasActionHandler = typeof onClick === 'function';
+
   return (
     <article
       data-testid={`product-card-${product.id}`}
@@ -80,23 +82,25 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onClick }) =>
             </span>
           </div>
 
-          <button
-            type="button"
-            disabled={!product.isAvailable}
-            onClick={() => onClick?.(product)}
-            aria-label={product.isAvailable ? `Chọn mua ${product.name}` : `${product.name} hiện đã hết`}
-            className={`inline-flex items-center justify-center rounded-xl px-3.5 py-2 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-brew-500 focus:ring-offset-1 ${
-              product.isAvailable
-                ? 'bg-brew-700 text-white hover:bg-brew-800 active:bg-brew-900 shadow-sm'
-                : 'bg-stone-200 text-stone-400 cursor-not-allowed'
-            }`}
-          >
-            <Coffee className="w-3.5 h-3.5 mr-1.5" />
-            {product.isAvailable ? 'Chọn món' : 'Tạm hết'}
-          </button>
+          {/* Chỉ hiển thị nút CTA khi thực sự có handler được truyền vào */}
+          {hasActionHandler && (
+            <button
+              type="button"
+              disabled={!product.isAvailable}
+              onClick={() => onClick(product)}
+              aria-label={product.isAvailable ? `Chọn mua ${product.name}` : `${product.name} hiện đã hết`}
+              className={`inline-flex items-center justify-center rounded-xl px-3.5 py-2 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-brew-500 focus:ring-offset-1 ${
+                product.isAvailable
+                  ? 'bg-brew-700 text-white hover:bg-brew-800 active:bg-brew-900 shadow-sm'
+                  : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+              }`}
+            >
+              <Coffee className="w-3.5 h-3.5 mr-1.5" />
+              {product.isAvailable ? 'Chọn món' : 'Tạm hết'}
+            </button>
+          )}
         </div>
       </div>
     </article>
   );
 };
-
