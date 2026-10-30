@@ -1,0 +1,69 @@
+@startuml
+!pragma layout smetana
+left to right direction
+
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam defaultFontName "Noto Sans"
+
+skinparam usecase {
+  BackgroundColor #FFFDF8
+  BorderColor #5D4037
+  ArrowColor #5D4037
+}
+
+actor "Khách hàng" as Customer
+actor "Nhân viên quầy\n/ Barista" as Barista
+actor "Dịch vụ thanh toán\nmô phỏng" as Gateway
+
+rectangle "Hệ thống BrewLite" {
+  usecase "Xem và tìm kiếm menu\n(FR-01)" as UC_Menu
+
+  usecase "Xem chi tiết, chọn\nsize và topping\n(FR-02)" as UC_Detail
+
+  usecase "Quản lý giỏ hàng\n(FR-02)" as UC_Cart
+
+  usecase "Đăng ký / đăng nhập\n(FR-03)" as UC_Auth
+
+  usecase "Đặt và thanh toán\nđơn hàng (UC-01)" as UC_Checkout
+
+  usecase "Tạo đơn PENDING và\nkiểm tra tồn kho\n(FR-04, FR-07)" as UC_Order
+
+  usecase "Thanh toán Ví / Thẻ\nvà chống gửi lặp\n(FR-05)" as UC_Payment
+
+  usecase "Áp dụng mã giảm giá\n(FR-08)" as UC_Promo
+
+  usecase "Xem lịch sử và\ntheo dõi đơn\n(FR-06)" as UC_History
+
+  usecase "Xem hàng đợi đơn\nđã thanh toán\n(FR-10)" as UC_Queue
+
+  usecase "Cập nhật trạng thái\nđơn hàng\n(FR-10)" as UC_Status
+}
+
+' Chức năng chính của khách hàng
+Customer -- UC_Menu
+Customer -- UC_Cart
+Customer -- UC_Auth
+Customer -- UC_Checkout
+Customer -- UC_History
+
+' Chức năng của nhân viên quầy
+Barista -- UC_Auth
+Barista -- UC_Queue
+Barista -- UC_Status
+
+' Hệ thống thanh toán bên ngoài
+Gateway -- UC_Payment
+
+' Xem chi tiết là hành vi tùy chọn khi xem menu
+UC_Detail ..> UC_Menu : <<extend>>
+
+' Đặt hàng luôn cần xác thực, tạo đơn và thanh toán
+UC_Checkout ..> UC_Auth : <<include>>
+UC_Checkout ..> UC_Order : <<include>>
+UC_Checkout ..> UC_Payment : <<include>>
+
+' Mã giảm giá chỉ xuất hiện khi khách có sử dụng
+UC_Promo ..> UC_Checkout : <<extend>>
+
+@enduml

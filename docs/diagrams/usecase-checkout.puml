@@ -1,0 +1,41 @@
+@startuml
+!pragma layout smetana
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam defaultFontName "Noto Sans"
+skinparam usecase {
+  BackgroundColor #FFFDF8
+  BorderColor #5D4037
+  ArrowColor #5D4037
+}
+
+actor "Khách hàng" as Customer
+actor "Dịch vụ thanh toán\nmô phỏng" as Gateway
+
+rectangle "BrewLite - Phạm vi UC-01" {
+  usecase "UC-01\nĐặt và thanh toán\nđơn hàng" as Checkout
+  usecase "Xác thực, kiểm tra giỏ\nvà tính lại giá\n(FR-02, FR-03, FR-04)" as Validate
+  usecase "Kiểm tra, giữ tồn kho và\ntạo đơn PENDING\n(FR-04, FR-07)" as CreateOrder
+  usecase "Thanh toán Ví / Thẻ\nvới Idempotency-Key\n(FR-05)" as Pay
+  usecase "Áp dụng mã giảm giá\nhợp lệ\n(FR-08)" as Promo
+  usecase "Trả kết quả, mã đơn và\ntrạng thái đơn\n(FR-06)" as Confirm
+}
+
+Customer -- Checkout
+Checkout ..> Validate : <<include>>
+Checkout ..> CreateOrder : <<include>>
+Checkout ..> Pay : <<include>>
+Checkout ..> Confirm : <<include>>
+Promo ..> Checkout : <<extend>>
+Gateway -- Pay
+
+note bottom of Checkout
+Tiền điều kiện: khách đã đăng nhập;
+giỏ có ít nhất một món hợp lệ.
+Thành công: Order và Payment = PAID; trả mã đơn.
+Thất bại xác định: Payment = FAILED,
+Order = PAYMENT_FAILED; hoàn kho đúng một lần.
+Timeout/UNKNOWN: Order giữ PENDING để đối soát.
+end note
+@enduml
