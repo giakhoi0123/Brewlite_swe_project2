@@ -1,0 +1,86 @@
+name: BrewLite CI — Sprint 1 Quality Gate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-ci:
+    name: Backend (NestJS / Prisma) Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: 1. INSTALL — Dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: 2. LINT — Code quality check
+        working-directory: backend
+        run: npm run lint
+
+      - name: Prisma Schema Validation & Client Generation
+        working-directory: backend
+        run: |
+          npx prisma validate
+          npm run prisma:generate
+
+      - name: 3. UNIT TEST — Backend Services & HTTP Contract Tests
+        working-directory: backend
+        run: npm test
+
+      - name: 4. BUILD — NestJS Production Compilation
+        working-directory: backend
+        run: npm run build
+
+  frontend-ci:
+    name: Frontend (Next.js / TypeScript) Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 1. INSTALL — Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: 2. LINT — ESLint check
+        working-directory: frontend
+        run: npm run lint
+
+      - name: 3. UNIT TEST — Node Test Runner
+        working-directory: frontend
+        run: npm test
+
+      - name: TypeScript Static Typecheck
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: 4. BUILD — Next.js Optimized Production Build
+        working-directory: frontend
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3002/api
