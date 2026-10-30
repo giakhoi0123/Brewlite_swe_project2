@@ -1,0 +1,164 @@
+name: BrewLite CI — Quality Gate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: Preflight Inspection
+    runs-on: ubuntu-latest
+    outputs:
+      backend_present: ${{ steps.check.outputs.backend_present }}
+      frontend_present: ${{ steps.check.outputs.frontend_present }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check module readiness
+        id: check
+        run: |
+          echo "=== Preflight Module Check ==="
+          if [ -f "backend/package.json" ] && [ -f "backend/package-lock.json" ]; then
+            echo "backend_present=true" >> "$GITHUB_OUTPUT"
+            echo "Backend module: DETECTED"
+          else
+            echo "backend_present=false" >> "$GITHUB_OUTPUT"
+            echo "Backend module: NOT_APPLICABLE_YET (Mã nguồn chưa được bàn giao)"
+          fi
+
+          if [ -f "frontend/package.json" ] && [ -f "frontend/package-lock.json" ]; then
+            echo "frontend_present=true" >> "$GITHUB_OUTPUT"
+            echo "Frontend module: DETECTED"
+          else
+            echo "frontend_present=false" >> "$GITHUB_OUTPUT"
+            echo "Frontend module: NOT_APPLICABLE_YET (Mã nguồn chưa được bàn giao)"
+          fi
+
+  backend-ci:
+    name: Backend Quality Gate (NestJS)
+    needs: preflight
+    if: needs.preflight.outputs.backend_present == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: 1. INSTALL — Dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Prisma Client Generation
+        working-directory: backend
+        run: |
+          if [ -f "prisma/schema.prisma" ]; then
+            npx prisma validate
+            npx prisma generate
+          fi
+
+      - name: 2. LINT — Code quality check
+        working-directory: backend
+        run: npm run lint
+
+      - name: 3. UNIT TEST — Backend test suite
+        working-directory: backend
+        run: npm test
+
+      - name: 4. BUILD — NestJS production build
+        working-directory: backend
+        run: npm run build
+
+  frontend-ci:
+    name: Frontend Quality Gate (Next.js)
+    needs: preflight
+    if: needs.preflight.outputs.frontend_present == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 1. INSTALL — Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: 2. LINT — ESLint check
+        working-directory: frontend
+        run: npm run lint
+
+      - name: 3. UNIT TEST — Frontend test suite
+        working-directory: frontend
+        run: npm test
+
+      - name: TypeScript Typecheck
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: 4. BUILD — Next.js production build
+        working-directory: frontend
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3002/api
+
+  summary:
+    name: Quality Gate Summary
+    needs: [preflight, backend-ci, frontend-ci]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report Status
+        run: |
+          echo "========================================================"
+          echo "           BREWLITE CI QUALITY GATE SUMMARY             "
+          echo "========================================================"
+
+          BACKEND_STATUS="NOT_APPLICABLE_YET"
+          if [ "${{ needs.preflight.outputs.backend_present }}" = "true" ]; then
+            if [ "${{ needs.backend-ci.result }}" = "success" ]; then
+              BACKEND_STATUS="PASS"
+            else
+              BACKEND_STATUS="FAIL"
+            fi
+          fi
+
+          FRONTEND_STATUS="NOT_APPLICABLE_YET"
+          if [ "${{ needs.preflight.outputs.frontend_present }}" = "true" ]; then
+            if [ "${{ needs.frontend-ci.result }}" = "success" ]; then
+              FRONTEND_STATUS="PASS"
+            else
+              FRONTEND_STATUS="FAIL"
+            fi
+          fi
+
+          echo "Backend (NestJS)   : $BACKEND_STATUS"
+          echo "Frontend (Next.js)  : $FRONTEND_STATUS"
+          echo "========================================================"
+
+          if [ "$BACKEND_STATUS" = "FAIL" ] || [ "$FRONTEND_STATUS" = "FAIL" ]; then
+            echo "Quality gate failed on an active module."
+            exit 1
+          fi
+
+          echo "Quality gate evaluation completed successfully."
+
