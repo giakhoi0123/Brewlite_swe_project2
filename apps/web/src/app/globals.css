@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 41, 37, 36;
+  --background-start-rgb: 253, 248, 244;
+  --background-end-rgb: 255, 255, 255;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background-color: #faf7f2;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
