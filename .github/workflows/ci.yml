@@ -27,20 +27,29 @@ jobs:
         id: check
         run: |
           echo "=== Preflight Module Check ==="
-          if [ -f "backend/package.json" ] && [ -f "backend/package-lock.json" ]; then
+          FAILED=0
+
+          if [ -f "apps/api/package.json" ] && [ -f "apps/api/package-lock.json" ]; then
             echo "backend_present=true" >> "$GITHUB_OUTPUT"
-            echo "Backend module: DETECTED"
+            echo "Backend module (apps/api): DETECTED"
           else
             echo "backend_present=false" >> "$GITHUB_OUTPUT"
-            echo "Backend module: NOT_APPLICABLE_YET (Mã nguồn chưa được bàn giao)"
+            echo "::error::Thiếu module bắt buộc apps/api hoặc apps/api/package-lock.json"
+            FAILED=1
           fi
 
-          if [ -f "frontend/package.json" ] && [ -f "frontend/package-lock.json" ]; then
+          if [ -f "apps/web/package.json" ] && [ -f "apps/web/package-lock.json" ]; then
             echo "frontend_present=true" >> "$GITHUB_OUTPUT"
-            echo "Frontend module: DETECTED"
+            echo "Frontend module (apps/web): DETECTED"
           else
             echo "frontend_present=false" >> "$GITHUB_OUTPUT"
-            echo "Frontend module: NOT_APPLICABLE_YET (Mã nguồn chưa được bàn giao)"
+            echo "::error::Thiếu module bắt buộc apps/web hoặc apps/web/package-lock.json"
+            FAILED=1
+          fi
+
+          if [ $FAILED -ne 0 ]; then
+            echo "Preflight check failed: Both apps/api and apps/web are mandatory for MVP."
+            exit 1
           fi
 
   backend-ci:
@@ -57,14 +66,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: apps/api/package-lock.json
 
       - name: 1. INSTALL — Dependencies
-        working-directory: backend
+        working-directory: apps/api
         run: npm ci
 
       - name: Prisma Client Generation
-        working-directory: backend
+        working-directory: apps/api
+        env:
+          DATABASE_URL: "postgresql://ci_user:ci_pass@localhost:5432/ci_db?schema=public"
         run: |
           if [ -f "prisma/schema.prisma" ]; then
             npx prisma validate
@@ -72,15 +83,15 @@ jobs:
           fi
 
       - name: 2. LINT — Code quality check
-        working-directory: backend
+        working-directory: apps/api
         run: npm run lint
 
       - name: 3. UNIT TEST — Backend test suite
-        working-directory: backend
+        working-directory: apps/api
         run: npm test
 
       - name: 4. BUILD — NestJS production build
-        working-directory: backend
+        working-directory: apps/api
         run: npm run build
 
   frontend-ci:
@@ -97,29 +108,29 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
 
       - name: 1. INSTALL — Dependencies
-        working-directory: frontend
+        working-directory: apps/web
         run: npm ci
 
       - name: 2. LINT — ESLint check
-        working-directory: frontend
+        working-directory: apps/web
         run: npm run lint
 
       - name: 3. UNIT TEST — Frontend test suite
-        working-directory: frontend
+        working-directory: apps/web
         run: npm test
 
       - name: TypeScript Typecheck
-        working-directory: frontend
+        working-directory: apps/web
         run: npx tsc --noEmit
 
       - name: 4. BUILD — Next.js production build
-        working-directory: frontend
+        working-directory: apps/web
         run: npm run build
         env:
-          NEXT_PUBLIC_API_URL: http://localhost:3002/api
+          NEXT_PUBLIC_API_URL: http://localhost:3005/api
 
   summary:
     name: Quality Gate Summary
@@ -132,33 +143,16 @@ jobs:
           echo "========================================================"
           echo "           BREWLITE CI QUALITY GATE SUMMARY             "
           echo "========================================================"
-
-          BACKEND_STATUS="NOT_APPLICABLE_YET"
-          if [ "${{ needs.preflight.outputs.backend_present }}" = "true" ]; then
-            if [ "${{ needs.backend-ci.result }}" = "success" ]; then
-              BACKEND_STATUS="PASS"
-            else
-              BACKEND_STATUS="FAIL"
-            fi
-          fi
-
-          FRONTEND_STATUS="NOT_APPLICABLE_YET"
-          if [ "${{ needs.preflight.outputs.frontend_present }}" = "true" ]; then
-            if [ "${{ needs.frontend-ci.result }}" = "success" ]; then
-              FRONTEND_STATUS="PASS"
-            else
-              FRONTEND_STATUS="FAIL"
-            fi
-          fi
-
-          echo "Backend (NestJS)   : $BACKEND_STATUS"
-          echo "Frontend (Next.js)  : $FRONTEND_STATUS"
+          echo "Preflight check    : ${{ needs.preflight.result }}"
+          echo "Backend (NestJS)   : ${{ needs.backend-ci.result }}"
+          echo "Frontend (Next.js)  : ${{ needs.frontend-ci.result }}"
           echo "========================================================"
 
-          if [ "$BACKEND_STATUS" = "FAIL" ] || [ "$FRONTEND_STATUS" = "FAIL" ]; then
-            echo "Quality gate failed on an active module."
+          if [ "${{ needs.preflight.result }}" != "success" ] || \
+             [ "${{ needs.backend-ci.result }}" != "success" ] || \
+             [ "${{ needs.frontend-ci.result }}" != "success" ]; then
+            echo "::error::Quality gate FAILED. All required modules (apps/api and apps/web) must be present and pass all checks."
             exit 1
           fi
 
           echo "Quality gate evaluation completed successfully."
-
