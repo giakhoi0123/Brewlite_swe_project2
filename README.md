@@ -13,3 +13,56 @@ Quy chuẩn làm việc và đóng góp mã nguồn của nhóm BrewLite:
 - **Tôn trọng phân công:** Không tự ý viết code thay cho phần việc của thành viên khác.
 - **Dọn dẹp branch:** Xóa branch tính năng sau khi merge thành công và đã xác minh an toàn trên `main`.
 - **Quy định hoàn thành:** Tuân thủ đầy đủ 10 tiêu chí nghiệm thu tại [docs/DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md).
+
+---
+
+## Hướng dẫn khởi chạy MVP Sprint 1 (Task 4.3)
+
+### 1. Yêu cầu môi trường
+- **Node.js**: Phiên bản 20+ hoặc 22+
+- **Docker & Docker Compose**: Đang chạy trên máy
+
+### 2. Khởi động cơ sở dữ liệu PostgreSQL (Local)
+Khởi động container PostgreSQL qua Docker Compose từ thư mục gốc của repository:
+```bash
+docker compose up -d
+```
+Trạng thái container có thể kiểm tra qua lệnh `docker ps` (service `brewlite-postgres` chạy tại cổng `5432`).
+
+### 3. Cài đặt và di chuyển dữ liệu Backend (NestJS + Prisma)
+```bash
+cd apps/api
+npm install
+npx prisma migrate dev
+npx prisma db seed
+```
+- Lệnh migrate sẽ áp dụng schema vào database `brewlite_db`.
+- Lệnh seed sẽ nạp sẵn 8 sản phẩm mẫu, danh sách options (kích cỡ, topping) và số lượng tồn kho (idempotent seed).
+
+### 4. Khởi chạy Backend API
+```bash
+cd apps/api
+npm run start:dev
+```
+API sẽ lắng nghe tại: `http://localhost:3005/api` (hoặc cổng được cấu hình qua biến môi trường `PORT`).
+
+**Hai endpoint chính thức:**
+- `GET http://localhost:3005/api/products` (Hỗ trợ query tìm kiếm không phân biệt hoa thường: `GET http://localhost:3005/api/products?search=cà+phê`)
+- `GET http://localhost:3005/api/products/:id` (Ví dụ: `GET http://localhost:3005/api/products/a0000000-0000-0000-0000-000000000001`)
+
+### 5. Khởi chạy Giao diện Frontend (Next.js)
+```bash
+cd apps/web
+npm install
+npm run dev
+```
+Giao diện thực đơn web sẽ chạy tại: `http://localhost:3006` (hoặc cổng Next.js khả dụng).
+Giao diện hỗ trợ đầy đủ thiết kế Mobile-First (tối ưu từ 360px), các trạng thái Loading Skeleton, Empty, Error và Retry phục hồi dữ liệu khi gọi API thật.
+
+### 6. Thực thi kiểm thử (Testing)
+- **Backend Unit Tests:** `cd apps/api && npm test`
+- **Backend API & E2E Tests:** `cd apps/api && npm run test:e2e`
+- **Frontend Component Tests:** `cd apps/web && npm test`
+- **Build kiểm tra Production:**
+  + Backend: `cd apps/api && npm run build`
+  + Frontend: `cd apps/web && npm run build`

@@ -3,18 +3,17 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Product } from '../types/product';
 import { ProductCard } from './ProductCard';
-import { Search, RotateCcw, AlertCircle, Coffee, Sparkles } from 'lucide-react';
+import { fetchProductsFromApi } from '../services/product-api';
+import { Search, RotateCcw, AlertCircle, Coffee } from 'lucide-react';
 
 interface MenuCatalogProps {
   initialSearch?: string;
   fetchProducts?: (search: string, signal?: AbortSignal) => Promise<Product[]>;
-  apiBaseUrl?: string;
 }
 
 export const MenuCatalog: React.FC<MenuCatalogProps> = ({
   initialSearch = '',
   fetchProducts,
-  apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3005/api',
 }) => {
   const [searchTerm, setSearchTerm] = useState<string>(initialSearch);
   const [products, setProducts] = useState<Product[]>([]);
@@ -45,23 +44,7 @@ export const MenuCatalog: React.FC<MenuCatalogProps> = ({
         if (fetchProducts) {
           data = await fetchProducts(query, controller.signal);
         } else {
-          const url = new URL(`${apiBaseUrl}/products`);
-          if (query.trim()) {
-            url.searchParams.set('search', query.trim());
-          }
-
-          const response = await fetch(url.toString(), {
-            signal: controller.signal,
-            headers: {
-              Accept: 'application/json',
-            },
-          });
-
-          if (!response.ok) {
-            throw new Error(`Máy chủ phản hồi mã lỗi ${response.status} (${response.statusText})`);
-          }
-
-          data = await response.json();
+          data = await fetchProductsFromApi(query, controller.signal);
         }
 
         // Only update state if this is still the most recent request
@@ -81,7 +64,7 @@ export const MenuCatalog: React.FC<MenuCatalogProps> = ({
         }
       }
     },
-    [apiBaseUrl, fetchProducts],
+    [fetchProducts],
   );
 
   useEffect(() => {
@@ -219,4 +202,3 @@ export const MenuCatalog: React.FC<MenuCatalogProps> = ({
     </div>
   );
 };
-
