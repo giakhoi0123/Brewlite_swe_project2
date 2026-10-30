@@ -135,3 +135,4 @@
 - **Trả lời:**
   - Nhóm tuyệt đối không tự ý vẽ lại sơ đồ để "hợp thức hóa" code một cách tùy tiện, cũng không phá vỡ logic đang chạy tốt.
   - Nhóm lập hồ sơ tại **Sổ đăng ký thay đổi thiết kế (Design Change Register — `DESIGN_CHANGE_REGISTER.md`)**, nêu rõ: Thiết kế ban đầu là gì, Hiện thực trong code là gì, Lý do kỹ thuật tại sao phải thay đổi (ví dụ: dùng số nguyên VND để tránh sai số float), Tác động đến hệ thống ra sao và ai là người đề xuất/phê duyệt. Đây là quy trình chuẩn mực trong ngành công nghệ phần mềm chuyên nghiệp.
+

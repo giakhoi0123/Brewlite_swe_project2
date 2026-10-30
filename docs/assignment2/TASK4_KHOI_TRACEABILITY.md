@@ -43,3 +43,4 @@
 
 - **100% các yêu cầu thuộc phạm vi Sprint 1 (FR-01, FR-02 xem chi tiết, NFR-01, NFR-02, NFR-03, NFR-05, NFR-06, NFR-07)** đều đã được hiện thực bằng code thực tế, có kiểm thử tự động xác minh và truy vết trực tiếp về sơ đồ thiết kế Task 1–3.
 - Các yêu cầu còn lại được phân định minh bạch là `OUT_OF_SCOPE_TASK4`, đúng theo nguyên tắc quản lý phạm vi Sprint của Scrum và không giả mạo kết quả.
+

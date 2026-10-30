@@ -31,3 +31,4 @@
 
 - Mọi sai biệt giữa bản vẽ UML và code thực tế đều có lý do kỹ thuật chính đáng (kỹ thuật tiền tệ VND, tối ưu hóa payload RESTful, kiến trúc monorepo gọn nhẹ).
 - Đối với vấn đề thanh toán VNPAY Sandbox (DCR-04), nhóm giữ nguyên tài liệu UML gốc của Task 2 và sẽ bổ sung sơ đồ chuyển đổi (Architecture Evolution / Adapter Diagram) riêng trong báo cáo Task 5.
+

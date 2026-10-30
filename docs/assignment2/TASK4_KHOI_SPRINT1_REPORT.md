@@ -187,3 +187,4 @@ Pipeline CI tại `.github/workflows/ci.yml` được cấu hình chặt chẽ:
 ### 3. Cải tiến cho Sprint 2 (Action Items)
 - Bắt buộc tạo Pull Request cho mọi tính năng mới trong Sprint 2, không commit trực tiếp vào branch tích hợp.
 - Chuẩn bị môi trường Docker PostgreSQL chung sớm để chạy kiểm thử tải và tích hợp end-to-end cho luồng thanh toán VNPAY Sandbox.
+
