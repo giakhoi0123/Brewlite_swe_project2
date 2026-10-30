@@ -54,3 +54,4 @@ Nếu bất kỳ bước nào thất bại, Pull Request bị chặn tự độn
 - **Kiệt:** Chịu trách nhiệm thiết kế kiểm thử & kiểm soát chất lượng (`tests/`, `*.spec.ts`).
 - **Duy:** Chịu trách nhiệm quản lý tài liệu Task 1–3, backlog và issue board.
 - **Khôi:** Chịu trách nhiệm tích hợp hệ thống, CI workflow, kiến trúc monorepo và nghiệm thu Sprint.
+

@@ -24,3 +24,4 @@ assignees: ''
 ## 📐 Thiết kế liên quan
 - [ ] Class Diagram: [Lớp liên quan]
 - [ ] Sequence Diagram / Activity Diagram: [Bước thực hiện]
+
