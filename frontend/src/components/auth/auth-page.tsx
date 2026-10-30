@@ -493,6 +493,21 @@ export function AuthPage({ reason }: { reason?: string }) {
             <button type="button">G Google</button>
             <button type="button">● Apple</button>
           </div>
+          <div className="guest-browse" style={{ marginTop: "1.25rem", textAlign: "center" }}>
+            <a
+              href="/products"
+              style={{
+                fontSize: "0.875rem",
+                textDecoration: "underline",
+                color: "var(--muted)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.35rem",
+              }}
+            >
+              ☕ Duyệt thực đơn trước (Không cần đăng nhập) →
+            </a>
+          </div>
         </div>
         <footer className="security">
           ◉ 256-Bit TLS Encrypted · OAuth 2.0 / NestJS Verified

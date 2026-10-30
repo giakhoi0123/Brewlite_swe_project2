@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { MenuHeader } from "@/components/menu/menu-header";
 import { MenuHero } from "@/components/menu/menu-hero";
 import { MenuFooter } from "@/components/menu/menu-footer";
-import { ProductCatalog } from "@/components/menu/product-catalog";
+import { MenuCatalogContainer } from "@/components/menu/menu-catalog-container";
 import styles from "@/components/menu/menu.module.css";
 
 export const metadata: Metadata = {
@@ -29,7 +29,7 @@ export default function ProductsPage() {
             <h2 id="menu-catalog-title" className={`${styles.headline} text-[22px] font-semibold leading-[30px]`}>Tất cả món nước</h2>
             <p className="text-sm leading-[22px] text-[var(--menu-muted)]">Một thức uống, một khoảnh khắc riêng.</p>
           </div>
-          <ProductCatalog />
+          <MenuCatalogContainer />
         </section>
       </main>
       <MenuFooter />
