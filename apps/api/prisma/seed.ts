@@ -135,61 +135,89 @@ export const SEED_PRODUCTS = [
 export async function main() {
   console.log('🌱 Starting repeatable database seed for BrewLite...');
 
-  for (const item of SEED_PRODUCTS) {
-    const { inventory, options, ...productData } = item;
+  await prisma.$transaction(
+    async (tx) => {
+      for (const item of SEED_PRODUCTS) {
+        const { inventory, options, ...productData } = item;
 
-    // 1. Upsert product
-    await prisma.product.upsert({
-      where: { id: productData.id },
-      update: {
-        name: productData.name,
-        basePrice: productData.basePrice,
-        imageUrl: productData.imageUrl,
-        isAvailable: productData.isAvailable,
-      },
-      create: {
-        id: productData.id,
-        name: productData.name,
-        basePrice: productData.basePrice,
-        imageUrl: productData.imageUrl,
-        isAvailable: productData.isAvailable,
-      },
-    });
+        // 1. Upsert product
+        await tx.product.upsert({
+          where: { id: productData.id },
+          update: {
+            name: productData.name,
+            basePrice: productData.basePrice,
+            imageUrl: productData.imageUrl,
+            isAvailable: productData.isAvailable,
+          },
+          create: {
+            id: productData.id,
+            name: productData.name,
+            basePrice: productData.basePrice,
+            imageUrl: productData.imageUrl,
+            isAvailable: productData.isAvailable,
+          },
+        });
 
-    // 2. Upsert inventory
-    await prisma.inventory.upsert({
-      where: { productId: productData.id },
-      update: {
-        quantity: inventory.quantity,
-        reserved: inventory.reserved,
-      },
-      create: {
-        productId: productData.id,
-        quantity: inventory.quantity,
-        reserved: inventory.reserved,
-      },
-    });
+        // 2. Upsert inventory
+        await tx.inventory.upsert({
+          where: { productId: productData.id },
+          update: {
+            quantity: inventory.quantity,
+            reserved: inventory.reserved,
+          },
+          create: {
+            productId: productData.id,
+            quantity: inventory.quantity,
+            reserved: inventory.reserved,
+          },
+        });
 
-    // 3. Upsert product options
-    for (const opt of options) {
-      await prisma.productOption.upsert({
-        where: { id: opt.id },
-        update: {
-          name: opt.name,
-          type: opt.type,
-          extraPrice: opt.extraPrice,
-          productId: productData.id,
-        },
-        create: {
-          id: opt.id,
-          name: opt.name,
-          type: opt.type,
-          extraPrice: opt.extraPrice,
-          productId: productData.id,
-        },
-      });
-    }
-  }
+        // 3. Synchronize product options:
+        // Lấy danh sách option ID được khai báo cho sản phẩm hiện tại
+        const seedOptionIds = options.map((opt) => opt.id);
+
+        // Xóa các ProductOption thuộc chính sản phẩm đó nhưng không còn xuất hiện trong danh sách seed
+        if (seedOptionIds.length > 0) {
+          await tx.productOption.deleteMany({
+            where: {
+              productId: productData.id,
+              id: { notIn: seedOptionIds },
+            },
+          });
+        } else {
+          await tx.productOption.deleteMany({
+            where: {
+              productId: productData.id,
+            },
+          });
+        }
+
+        // Upsert toàn bộ option đang được khai báo
+        for (const opt of options) {
+          await tx.productOption.upsert({
+            where: { id: opt.id },
+            update: {
+              name: opt.name,
+              type: opt.type,
+              extraPrice: opt.extraPrice,
+              productId: productData.id,
+            },
+            create: {
+              id: opt.id,
+              name: opt.name,
+              type: opt.type,
+              extraPrice: opt.extraPrice,
+              productId: productData.id,
+            },
+          });
+        }
+      }
+    },
+    {
+      maxWait: 5000,
+      timeout: 15000,
+    },
+  );
 
   console.log(`✅ Successfully seeded ${SEED_PRODUCTS.length} products with inventories and options.`);
 }
@@ -204,4 +232,3 @@ if (require.main === module) {
       await prisma.$disconnect();
     });
 }
-
