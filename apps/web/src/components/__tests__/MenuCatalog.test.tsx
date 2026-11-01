@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MenuCatalog } from '../MenuCatalog';
 import { Product } from '../../types/product';
 
@@ -19,7 +19,23 @@ describe('MenuCatalog Component', () => {
       imageUrl: 'https://example.com/tradao.jpg',
       isAvailable: true,
     },
+    {
+      id: 'prod-003',
+      name: 'Cold Brew Cam Sả',
+      basePrice: 45000,
+      imageUrl: 'https://example.com/coldbrew.jpg',
+      isAvailable: false,
+    },
   ];
+
+  function createDeferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((resolvePromise) => {
+      resolve = resolvePromise;
+    });
+
+    return { promise, resolve };
+  }
 
   it('renders loading state initially while fetching products', async () => {
     const slowFetch = () => new Promise<Product[]>(() => {}); // Never resolves during this assertion
@@ -44,6 +60,13 @@ describe('MenuCatalog Component', () => {
 
     // Verify FIX-04: Thẻ trong MenuCatalog không có nút 'Chọn món' vô tác dụng
     expect(screen.queryByRole('button', { name: /chọn/i })).not.toBeInTheDocument();
+  });
+
+  it('renders the unavailable state supplied by the Products API contract', async () => {
+    render(<MenuCatalog fetchProducts={jest.fn().mockResolvedValue(mockProducts)} />);
+
+    expect(await screen.findByText('Cold Brew Cam Sả')).toBeInTheDocument();
+    expect(screen.getByText('Hết hàng')).toBeInTheDocument();
   });
 
   it('renders empty state when products array is empty', async () => {
@@ -108,5 +131,50 @@ describe('MenuCatalog Component', () => {
     await waitFor(() => {
       expect(mockFilterFetch).toHaveBeenCalledWith('đào', expect.any(Object));
     });
+  });
+
+  it('does not let a slower stale request overwrite the latest search results', async () => {
+    const initialRequest = createDeferred<Product[]>();
+    const latestRequest = createDeferred<Product[]>();
+    let initialSignal: AbortSignal | undefined;
+
+    const controlledFetch = jest.fn((search: string, signal?: AbortSignal) => {
+      if (search === '') {
+        initialSignal = signal;
+        return initialRequest.promise;
+      }
+      return latestRequest.promise;
+    });
+
+    render(<MenuCatalog fetchProducts={controlledFetch} />);
+
+    await waitFor(() => {
+      expect(controlledFetch).toHaveBeenCalledWith('', expect.any(AbortSignal));
+    });
+
+    fireEvent.change(screen.getByLabelText(/Tìm kiếm sản phẩm/i), {
+      target: { value: 'đào' },
+    });
+
+    await waitFor(() => {
+      expect(controlledFetch).toHaveBeenCalledWith('đào', expect.any(AbortSignal));
+    });
+    expect(initialSignal?.aborted).toBe(true);
+
+    await act(async () => {
+      latestRequest.resolve([mockProducts[1]]);
+      await latestRequest.promise;
+    });
+
+    expect(screen.getByText('Trà Đào Cam Sả')).toBeInTheDocument();
+    expect(screen.queryByText('Cà phê Đen Đá')).not.toBeInTheDocument();
+
+    await act(async () => {
+      initialRequest.resolve([mockProducts[0]]);
+      await initialRequest.promise;
+    });
+
+    expect(screen.getByText('Trà Đào Cam Sả')).toBeInTheDocument();
+    expect(screen.queryByText('Cà phê Đen Đá')).not.toBeInTheDocument();
   });
 });

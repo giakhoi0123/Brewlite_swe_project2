@@ -44,6 +44,24 @@ describe('product-api service', () => {
 
       await expect(fetchProductsFromApi()).rejects.toThrow(ProductApiError);
     });
+
+    it('normalizes network failures into an actionable ProductApiError', async () => {
+      global.fetch = jest.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+
+      await expect(fetchProductsFromApi()).rejects.toMatchObject({
+        name: 'ProductApiError',
+        message: 'Lỗi kết nối đến máy chủ BrewLite. Vui lòng thử lại.',
+      });
+    });
+
+    it('preserves AbortError so callers can ignore a cancelled stale request', async () => {
+      const abortError = Object.assign(new Error('The operation was aborted'), {
+        name: 'AbortError',
+      });
+      global.fetch = jest.fn().mockRejectedValue(abortError);
+
+      await expect(fetchProductsFromApi('cà phê')).rejects.toBe(abortError);
+    });
   });
 
   describe('fetchProductDetailFromApi', () => {
@@ -86,6 +104,15 @@ describe('product-api service', () => {
       await expect(fetchProductDetailFromApi('invalid-id')).rejects.toThrow(
         'Mã sản phẩm không đúng định dạng',
       );
+    });
+
+    it('normalizes unexpected detail connection failures', async () => {
+      global.fetch = jest.fn().mockRejectedValue(new TypeError('Network unavailable'));
+
+      await expect(fetchProductDetailFromApi('prod-001')).rejects.toMatchObject({
+        name: 'ProductApiError',
+        message: 'Không thể kết nối đến máy chủ để lấy thông tin món.',
+      });
     });
   });
 });
