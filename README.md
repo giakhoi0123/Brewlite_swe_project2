@@ -81,8 +81,13 @@ Giao diện tối ưu Mobile-First (chuẩn từ 360px) và hỗ trợ đầy đ
 
 ### 7. Thực thi kiểm thử (Testing)
 - **Backend Unit Tests:** `cd apps/api && npm test`
-- **Backend E2E & CORS Tests:** `cd apps/api && npm run test:e2e`
+- **Backend PostgreSQL Integration/E2E:** dùng database test riêng theo [hướng dẫn Task 4](docs/testing/task4-kiet-test-guide.md), sau đó chạy `npm run test:integration` hoặc `npm run test:e2e -- --runInBand`
 - **Frontend Component & API Tests:** `cd apps/web && npm test`
 - **Biên dịch Production (Build):**
   - Backend: `cd apps/api && npm run build`
   - Frontend: `cd apps/web && npm run build`
+
+Chi tiết kiểm thử và nghiệm thu phần Task 4 của Nguyễn Tuấn Kiệt:
+
+- [Hướng dẫn chạy test](docs/testing/task4-kiet-test-guide.md)
+- [Biên bản nghiệm thu và bằng chứng](docs/testing/task4-kiet-acceptance.md)

@@ -50,7 +50,7 @@ else JWT hợp lệ
       else Thanh toán thất bại
         Pay --> API: FAILED
         API -> DB: BEGIN; Payment=FAILED;\nOrder=PAYMENT_FAILED; hoàn kho 1 lần; COMMIT
-        API --> UI: 402/422 + reason
+        API --> UI: 402 PAYMENT_DECLINED + reason
         UI --> Customer: Cho phép thử lại với key mới
       else Timeout / UNKNOWN
         Pay --> API: timeout

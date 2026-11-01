@@ -57,6 +57,22 @@ jobs:
     needs: preflight
     if: needs.preflight.outputs.backend_present == 'true'
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://ci_user:ci_pass@localhost:5432/brewlite_ci_test?schema=public
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci_user
+          POSTGRES_PASSWORD: ci_pass
+          POSTGRES_DB: brewlite_ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_user -d brewlite_ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -72,23 +88,31 @@ jobs:
         working-directory: apps/api
         run: npm ci
 
-      - name: Prisma Client Generation
+      - name: Prisma schema validation and client generation
         working-directory: apps/api
-        env:
-          DATABASE_URL: "postgresql://ci_user:ci_pass@localhost:5432/ci_db?schema=public"
         run: |
-          if [ -f "prisma/schema.prisma" ]; then
-            npx prisma validate
-            npx prisma generate
-          fi
+          npx prisma validate
+          npm run prisma:generate
 
       - name: 2. LINT — Code quality check
         working-directory: apps/api
         run: npm run lint
 
-      - name: 3. UNIT TEST — Backend test suite
+      - name: 3A. UNIT TEST — Backend test suite
         working-directory: apps/api
-        run: npm test
+        run: npm test -- --runInBand
+
+      - name: 3B. DATABASE — Apply migrations
+        working-directory: apps/api
+        run: npm run prisma:deploy
+
+      - name: 3C. DATABASE — Load deterministic seed
+        working-directory: apps/api
+        run: npm run prisma:seed
+
+      - name: 3D. INTEGRATION TEST — PostgreSQL Products API
+        working-directory: apps/api
+        run: npm run test:integration
 
       - name: 4. BUILD — NestJS production build
         working-directory: apps/api
@@ -120,7 +144,7 @@ jobs:
 
       - name: 3. UNIT TEST — Frontend test suite
         working-directory: apps/web
-        run: npm test
+        run: npm test -- --runInBand
 
       - name: TypeScript Typecheck
         working-directory: apps/web

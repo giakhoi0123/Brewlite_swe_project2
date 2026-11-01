@@ -8,7 +8,7 @@ describe('ProductCard Component', () => {
     id: 'prod-001',
     name: 'Cà phê Sữa Đá',
     basePrice: 29000,
-    imageUrl: 'https://example.com/suada.jpg',
+    imageUrl: 'https://images.unsplash.com/photo-product-card-test?w=600',
     isAvailable: true,
   };
 
@@ -65,11 +65,11 @@ describe('ProductCard Component', () => {
     render(<ProductCard product={availableProduct} />);
 
     const img = screen.getByAltText('Cà phê Sữa Đá') as HTMLImageElement;
-    expect(img.src).toBe('https://example.com/suada.jpg');
+    expect(decodeURIComponent(img.src)).toContain('photo-product-card-test');
 
     // Trigger onError
     fireEvent.error(img);
 
-    expect(img.src).toContain('images.unsplash.com');
+    expect(decodeURIComponent(img.src)).toContain('photo-1514432324607-a09d9b4aefdd');
   });
 });

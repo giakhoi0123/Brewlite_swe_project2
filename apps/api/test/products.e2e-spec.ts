@@ -6,6 +6,17 @@ import { AppModule } from '../src/app.module';
 describe('Products API (e2e)', () => {
   let app: INestApplication;
 
+  const seedProductIds = [
+    'a0000000-0000-0000-0000-000000000001',
+    'a0000000-0000-0000-0000-000000000002',
+    'a0000000-0000-0000-0000-000000000003',
+    'a0000000-0000-0000-0000-000000000004',
+    'a0000000-0000-0000-0000-000000000005',
+    'a0000000-0000-0000-0000-000000000006',
+    'a0000000-0000-0000-0000-000000000007',
+    'a0000000-0000-0000-0000-000000000008',
+  ];
+
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -27,21 +38,34 @@ describe('Products API (e2e)', () => {
   });
 
   describe('GET /api/products', () => {
-    it('should return 200 and a non-empty array of products from seed', async () => {
+    it('should return the deterministic seed list using the frontend contract', async () => {
       const response = await request(app.getHttpServer())
         .get('/api/products')
         .expect(200);
 
       expect(Array.isArray(response.body)).toBe(true);
-      expect(response.body.length).toBeGreaterThanOrEqual(8);
+      expect(response.body).toHaveLength(seedProductIds.length);
+      expect(response.body.map((product: { id: string }) => product.id)).toEqual(
+        expect.arrayContaining(seedProductIds),
+      );
+      expect(response.body).toContainEqual(
+        expect.objectContaining({
+          id: 'a0000000-0000-0000-0000-000000000007',
+          isAvailable: false,
+        }),
+      );
 
-      const first = response.body[0];
-      expect(first).toHaveProperty('id');
-      expect(first).toHaveProperty('name');
-      expect(first).toHaveProperty('basePrice');
-      expect(first).toHaveProperty('imageUrl');
-      expect(first).toHaveProperty('isAvailable');
-      expect(typeof first.basePrice).toBe('number');
+      for (const product of response.body) {
+        expect(product).toEqual({
+          id: expect.any(String),
+          name: expect.any(String),
+          basePrice: expect.any(Number),
+          imageUrl: expect.any(String),
+          isAvailable: expect.any(Boolean),
+          createdAt: expect.any(String),
+        });
+        expect(Number.isNaN(Date.parse(product.createdAt))).toBe(false);
+      }
     });
 
     it('should perform case-insensitive search (FR-01)', async () => {
@@ -81,14 +105,34 @@ describe('Products API (e2e)', () => {
         .get(`/api/products/${validSeedId}`)
         .expect(200);
 
-      expect(response.body.id).toBe(validSeedId);
-      expect(response.body.name).toBe('Cà phê đen đá');
-      expect(response.body.basePrice).toBe(25000);
-      expect(Array.isArray(response.body.options)).toBe(true);
-      expect(response.body.options.length).toBeGreaterThan(0);
-      expect(response.body.inventory).toBeDefined();
-      expect(response.body.inventory.quantity).toBe(150);
-      expect(response.body.inventory.availableStock).toBe(150);
+      expect(response.body).toEqual({
+        id: validSeedId,
+        name: 'Cà phê đen đá',
+        basePrice: 25000,
+        imageUrl: expect.any(String),
+        isAvailable: true,
+        createdAt: expect.any(String),
+        options: expect.arrayContaining([
+          {
+            id: 'b0000000-0000-0000-0000-000000000001',
+            type: 'SIZE',
+            name: 'Size M (Tiêu chuẩn)',
+            extraPrice: 0,
+          },
+          {
+            id: 'b0000000-0000-0000-0000-000000000003',
+            type: 'TOPPING',
+            name: 'Thạch cà phê',
+            extraPrice: 5000,
+          },
+        ]),
+        inventory: {
+          quantity: 150,
+          reserved: 0,
+          availableStock: 150,
+        },
+      });
+      expect(response.body.options).toHaveLength(3);
     });
 
     it('should return 404 when product id is valid UUID but does not exist', async () => {

@@ -2,9 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/prisma/prisma.service';
 
-describe('Sprint 1 Menu MVP Live Flow Verification', () => {
+describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
   let app: INestApplication;
+  let prisma: PrismaService;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -20,58 +22,88 @@ describe('Sprint 1 Menu MVP Live Flow Verification', () => {
       }),
     );
     await app.init();
+    prisma = app.get(PrismaService);
   });
 
   afterAll(async () => {
     await app.close();
   });
 
-  it('Verifies Live Database Seed -> NestJS Products API -> Frontend Contract Compatibility', async () => {
-    // 1. Fetch list of products
+  it('uses the dedicated PostgreSQL test database', async () => {
+    const rows = await prisma.$queryRaw<Array<{ databaseName: string }>>`
+      SELECT current_database() AS "databaseName"
+    `;
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].databaseName).toMatch(/(^|[-_])test($|[-_])/);
+  });
+
+  it('maps the persisted seed list to the frontend Product contract', async () => {
+    const persistedProducts = await prisma.product.findMany({
+      orderBy: { name: 'asc' },
+    });
+
     const listRes = await request(app.getHttpServer())
       .get('/api/products')
       .expect(200);
 
-    expect(Array.isArray(listRes.body)).toBe(true);
-    expect(listRes.body.length).toBeGreaterThanOrEqual(8);
+    expect(listRes.body).toHaveLength(persistedProducts.length);
+    expect(persistedProducts).toHaveLength(8);
 
-    // Verify properties match Frontend Product type
-    for (const item of listRes.body) {
-      expect(typeof item.id).toBe('string');
-      expect(typeof item.name).toBe('string');
-      expect(typeof item.basePrice).toBe('number');
-      expect(typeof item.imageUrl).toBe('string');
-      expect(typeof item.isAvailable).toBe('boolean');
-      expect(item.basePrice).toBeGreaterThan(0);
+    for (const persistedProduct of persistedProducts) {
+      const apiProduct = listRes.body.find(
+        (product: { id: string }) => product.id === persistedProduct.id,
+      );
+
+      expect(apiProduct).toEqual({
+        id: persistedProduct.id,
+        name: persistedProduct.name,
+        basePrice: Number(persistedProduct.basePrice),
+        imageUrl: persistedProduct.imageUrl,
+        isAvailable: persistedProduct.isAvailable,
+        createdAt: persistedProduct.createdAt.toISOString(),
+      });
     }
+  });
 
-    // 2. Fetch specific item (Cold brew cam sả - unavailable test item)
-    const unavailableItem = listRes.body.find((p: any) => p.name.includes('Cold Brew Cam Sả'));
-    expect(unavailableItem).toBeDefined();
-    expect(unavailableItem.isAvailable).toBe(false);
+  it('maps PostgreSQL options and inventory to the frontend detail contract', async () => {
+    const productId = 'a0000000-0000-0000-0000-000000000008';
+    const persistedProduct = await prisma.product.findUnique({
+      where: { id: productId },
+      include: { options: true, inventory: true },
+    });
 
-    // 3. Fetch item detail (Cà phê trứng nướng - with options and inventory)
-    const trungNuongItem = listRes.body.find((p: any) => p.name.includes('Trứng Nướng'));
-    expect(trungNuongItem).toBeDefined();
+    expect(persistedProduct).not.toBeNull();
 
     const detailRes = await request(app.getHttpServer())
-      .get(`/api/products/${trungNuongItem.id}`)
+      .get(`/api/products/${productId}`)
       .expect(200);
 
-    expect(detailRes.body.id).toBe(trungNuongItem.id);
-    expect(detailRes.body.name).toBe(trungNuongItem.name);
+    expect(detailRes.body).toMatchObject({
+      id: persistedProduct!.id,
+      name: persistedProduct!.name,
+      basePrice: Number(persistedProduct!.basePrice),
+      imageUrl: persistedProduct!.imageUrl,
+      isAvailable: persistedProduct!.isAvailable,
+      createdAt: persistedProduct!.createdAt.toISOString(),
+      inventory: {
+        quantity: persistedProduct!.inventory!.quantity,
+        reserved: persistedProduct!.inventory!.reserved,
+        availableStock:
+          persistedProduct!.inventory!.quantity -
+          persistedProduct!.inventory!.reserved,
+      },
+    });
     expect(Array.isArray(detailRes.body.options)).toBe(true);
-    expect(detailRes.body.options.length).toBeGreaterThan(0);
+    expect(detailRes.body.options).toHaveLength(persistedProduct!.options.length);
 
-    // Verify options format
-    const cheeseOption = detailRes.body.options.find((opt: any) => opt.name.includes('Kem Cheese'));
-    expect(cheeseOption).toBeDefined();
-    expect(cheeseOption.type).toBe('TOPPING');
-    expect(cheeseOption.extraPrice).toBe(12000);
-
-    // Verify inventory format
-    expect(detailRes.body.inventory).toBeDefined();
-    expect(detailRes.body.inventory.quantity).toBe(75);
-    expect(detailRes.body.inventory.availableStock).toBe(75);
+    for (const persistedOption of persistedProduct!.options) {
+      expect(detailRes.body.options).toContainEqual({
+        id: persistedOption.id,
+        type: persistedOption.type,
+        name: persistedOption.name,
+        extraPrice: Number(persistedOption.extraPrice),
+      });
+    }
   });
 });

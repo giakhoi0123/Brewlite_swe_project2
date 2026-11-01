@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { Product } from '../types/product';
 import { formatCurrency } from '../utils/format';
 import { Coffee } from 'lucide-react';
@@ -37,11 +38,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onClick }) =>
     >
       {/* Product Image */}
       <div className="relative aspect-square w-full overflow-hidden bg-stone-100">
-        <img
+        <Image
           src={imgSrc}
           alt={product.name}
+          fill
+          sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
           onError={handleImageError}
-          loading="lazy"
           className={`h-full w-full object-cover transition-transform duration-300 ${
             product.isAvailable ? 'group-hover:scale-105' : 'grayscale'
           }`}
