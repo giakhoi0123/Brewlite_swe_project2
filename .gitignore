@@ -2,6 +2,9 @@
 .DS_Store
 Thumbs.db
 
+# Local assignment reference
+/Assigment_template_SGU.pdf
+
 # Environment and local configurations
 .env
 .env.*
