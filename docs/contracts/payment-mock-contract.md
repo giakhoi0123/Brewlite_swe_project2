@@ -1,7 +1,8 @@
 # Payment mock contract — Sprint 2 preparation
 
-Status: **Draft for team approval**. This contract prepares deterministic development and
-test fixtures only. It does not implement a Payment module, database schema or real gateway.
+Status: **Accepted for the Sprint 2 mock contract**. This contract prepares deterministic
+development and test fixtures only. It does not implement a Payment module, database schema
+or real gateway.
 
 Traceability: UC-01, FR-03, FR-05, NFR-02, NFR-04 and ADR-004.
 
@@ -133,11 +134,11 @@ the stored result from the first request.
 No response may move an order from `PAID` back to `PENDING` or create a second successful
 Payment for the same order.
 
-## Decision requiring team confirmation
+## Confirmed determinate-failure status
 
-`docs/diagrams/sequence-checkout.puml` currently states `402/422` for a determinate payment
-failure. This draft selects `402` and the `PAYMENT_DECLINED` code. If the team chooses `422`,
-the diagram, this contract and fixtures must be updated together before implementation.
+A determinate payment failure uses HTTP `402 Payment Required` with the
+`PAYMENT_DECLINED` code. The sequence diagram, this contract and the fixtures use the same
+decision.
 
 The TypeScript types and deterministic examples are stored in
 `apps/api/test/fixtures/payment-mock-contract.fixture.ts`.
