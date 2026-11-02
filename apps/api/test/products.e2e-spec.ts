@@ -62,6 +62,7 @@ describe('Products API (e2e)', () => {
           basePrice: expect.any(Number),
           imageUrl: expect.any(String),
           isAvailable: expect.any(Boolean),
+          canOrder: expect.any(Boolean),
           createdAt: expect.any(String),
         });
         expect(Number.isNaN(Date.parse(product.createdAt))).toBe(false);
@@ -111,6 +112,7 @@ describe('Products API (e2e)', () => {
         basePrice: 25000,
         imageUrl: expect.any(String),
         isAvailable: true,
+        canOrder: true,
         createdAt: expect.any(String),
         options: expect.arrayContaining([
           {
