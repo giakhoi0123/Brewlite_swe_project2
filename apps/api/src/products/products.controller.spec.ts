@@ -13,6 +13,7 @@ describe('ProductsController', () => {
     basePrice: 25000,
     imageUrl: 'https://example.com/image.jpg',
     isAvailable: true,
+    canOrder: true,
     createdAt: '2026-10-31T00:00:00.000Z',
   };
 

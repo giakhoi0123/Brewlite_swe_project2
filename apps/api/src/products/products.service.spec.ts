@@ -14,6 +14,7 @@ describe('ProductsService', () => {
     basePrice: new Prisma.Decimal(25000),
     imageUrl: 'https://example.com/black-coffee.jpg',
     isAvailable: true,
+    inventory: { quantity: 8, reserved: 3 },
     createdAt: new Date('2026-10-31T00:00:00.000Z'),
     updatedAt: new Date('2026-10-31T00:00:00.000Z'),
   };
@@ -73,6 +74,7 @@ describe('ProductsService', () => {
         basePrice: 25000,
         imageUrl: mockProduct.imageUrl,
         isAvailable: true,
+        canOrder: true,
         createdAt: '2026-10-31T00:00:00.000Z',
       });
     });
@@ -92,6 +94,34 @@ describe('ProductsService', () => {
       const result = await service.findAll({ search: 'KhôngTồnTại' });
 
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('orderability across catalog, search and detail', () => {
+    it.each([
+      { label: 'available stock', isAvailable: true, inventory: { quantity: 8, reserved: 3 }, canOrder: true, stock: 5 },
+      { label: 'zero stock', isAvailable: true, inventory: { quantity: 0, reserved: 0 }, canOrder: false, stock: 0 },
+      { label: 'fully reserved physical stock', isAvailable: true, inventory: { quantity: 8, reserved: 8 }, canOrder: false, stock: 0 },
+      { label: 'sale disabled with stock', isAvailable: false, inventory: { quantity: 8, reserved: 0 }, canOrder: false, stock: 8 },
+      { label: 'missing inventory', isAvailable: true, inventory: null, canOrder: false, stock: null },
+      { label: 'reservations exceed quantity', isAvailable: true, inventory: { quantity: 3, reserved: 8 }, canOrder: false, stock: 0 },
+    ])('$label', async ({ isAvailable, inventory, canOrder, stock }) => {
+      const product = { ...mockProductWithDetails, isAvailable, inventory };
+      repository.findMany.mockResolvedValue([product]);
+      repository.findById.mockResolvedValue(product);
+
+      const list = await service.findAll({});
+      const search = await service.findAll({ search: product.name });
+      const detail = await service.findOne(product.id);
+
+      for (const response of [list[0], search[0], detail]) {
+        expect(response).toMatchObject({ id: product.id, isAvailable, canOrder });
+      }
+      expect(detail.inventory).toEqual(
+        inventory ? { ...inventory, availableStock: stock } : null,
+      );
+      expect(repository.findMany).toHaveBeenNthCalledWith(1, undefined);
+      expect(repository.findMany).toHaveBeenNthCalledWith(2, product.name);
     });
   });
 

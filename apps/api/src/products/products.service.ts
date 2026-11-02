@@ -1,9 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { ProductsRepository, ProductWithDetails } from './products.repository';
+import {
+  ProductsRepository,
+  ProductWithDetails,
+  ProductWithInventory,
+} from './products.repository';
 import { GetProductsQueryDto } from './dto/get-products-query.dto';
 import { ProductResponseDto } from './dto/product-response.dto';
 import { ProductDetailResponseDto } from './dto/product-detail-response.dto';
-import { Product } from '@prisma/client';
 
 @Injectable()
 export class ProductsService {
@@ -22,25 +25,21 @@ export class ProductsService {
     return this.mapToProductDetailResponse(product);
   }
 
-  private mapToProductResponse(product: Product): ProductResponseDto {
+  private mapToProductResponse(product: ProductWithInventory): ProductResponseDto {
     return {
       id: product.id,
       name: product.name,
       basePrice: Number(product.basePrice),
       imageUrl: product.imageUrl,
       isAvailable: product.isAvailable,
+      canOrder: product.isAvailable && this.availableStock(product.inventory) > 0,
       createdAt: product.createdAt.toISOString(),
     };
   }
 
   private mapToProductDetailResponse(product: ProductWithDetails): ProductDetailResponseDto {
     return {
-      id: product.id,
-      name: product.name,
-      basePrice: Number(product.basePrice),
-      imageUrl: product.imageUrl,
-      isAvailable: product.isAvailable,
-      createdAt: product.createdAt.toISOString(),
+      ...this.mapToProductResponse(product),
       options: product.options.map((opt) => ({
         id: opt.id,
         type: opt.type,
@@ -51,9 +50,13 @@ export class ProductsService {
         ? {
             quantity: product.inventory.quantity,
             reserved: product.inventory.reserved,
-            availableStock: Math.max(0, product.inventory.quantity - product.inventory.reserved),
+            availableStock: this.availableStock(product.inventory),
           }
         : null,
     };
+  }
+
+  private availableStock(inventory: ProductWithInventory['inventory']): number {
+    return inventory ? Math.max(0, inventory.quantity - inventory.reserved) : 0;
   }
 }
