@@ -1,4 +1,5 @@
 import { OptionType } from '@prisma/client';
+import { ProductResponseDto } from './product-response.dto';
 
 export class ProductOptionDto {
   id: string;
@@ -13,13 +14,7 @@ export class InventoryDto {
   availableStock: number;
 }
 
-export class ProductDetailResponseDto {
-  id: string;
-  name: string;
-  basePrice: number;
-  imageUrl: string;
-  isAvailable: boolean;
-  createdAt: string;
+export class ProductDetailResponseDto extends ProductResponseDto {
   options: ProductOptionDto[];
   inventory: InventoryDto | null;
 }

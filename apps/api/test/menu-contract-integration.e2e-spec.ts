@@ -41,6 +41,7 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
   it('maps the persisted seed list to the frontend Product contract', async () => {
     const persistedProducts = await prisma.product.findMany({
       orderBy: { name: 'asc' },
+      include: { inventory: true },
     });
 
     const listRes = await request(app.getHttpServer())
@@ -49,6 +50,8 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
 
     expect(listRes.body).toHaveLength(persistedProducts.length);
     expect(persistedProducts).toHaveLength(8);
+    expect(listRes.body.map((product: { id: string }) => product.id))
+      .toEqual(persistedProducts.map(product => product.id));
 
     for (const persistedProduct of persistedProducts) {
       const apiProduct = listRes.body.find(
@@ -61,6 +64,9 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
         basePrice: Number(persistedProduct.basePrice),
         imageUrl: persistedProduct.imageUrl,
         isAvailable: persistedProduct.isAvailable,
+        canOrder: persistedProduct.isAvailable &&
+          !!persistedProduct.inventory &&
+          persistedProduct.inventory.quantity > persistedProduct.inventory.reserved,
         createdAt: persistedProduct.createdAt.toISOString(),
       });
     }
