@@ -1,0 +1,62 @@
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PassportStrategy } from '@nestjs/passport';
+import { ExtractJwt, Strategy } from 'passport-jwt';
+import { PrismaService } from '../prisma/prisma.service';
+
+const cookieExtractor = (request: {
+  headers?: { cookie?: string };
+}): string | null => {
+  if (!request?.headers?.cookie) return null;
+  const cookie = request.headers.cookie
+    .split('; ')
+    .find((part) => part.startsWith('brewlite_session='));
+  return cookie ? cookie.slice('brewlite_session='.length) : null;
+};
+
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy) {
+  constructor(
+    config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {
+    super({
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        cookieExtractor,
+      ]),
+      ignoreExpiration: false,
+      secretOrKey: config.get<string>('JWT_SECRET') || 'brewlite-super-secret-jwt-key-for-development',
+    });
+  }
+
+  async validate(payload: { sub?: string; sessionVersion?: number }) {
+    if (!payload.sub) {
+      throw new UnauthorizedException('Phiên đăng nhập không hợp lệ');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Tài khoản không tồn tại');
+    }
+
+    if (
+      payload.sessionVersion !== undefined &&
+      payload.sessionVersion !== user.sessionVersion
+    ) {
+      throw new UnauthorizedException('Phiên đăng nhập đã bị vô hiệu hóa, vui lòng đăng nhập lại');
+    }
+
+    return {
+      userId: user.id,
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      name: user.fullName,
+      role: user.role,
+    };
+  }
+}

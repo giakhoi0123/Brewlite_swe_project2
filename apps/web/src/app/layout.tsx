@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter, Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
+import { AuthProvider } from '../components/auth/AuthProvider';
 import { CartProvider } from '../components/cart/CartProvider';
 import { FavoritesProvider } from '../components/favorites/FavoritesProvider';
 import { Footer } from '../components/layout/Footer';
@@ -35,13 +36,15 @@ export default function RootLayout({
     <html lang="vi" className={`${inter.variable} ${jakarta.variable}`}>
       <body className="min-h-screen flex flex-col font-sans text-body-md bg-surface text-on-surface antialiased selection:bg-secondary-fixed selection:text-on-secondary-fixed">
         <ToastProvider>
-          <CartProvider>
-            <FavoritesProvider>
-              <Header />
-              <main className="flex-1 w-full pt-20">{children}</main>
-              <Footer />
-            </FavoritesProvider>
-          </CartProvider>
+          <AuthProvider>
+            <CartProvider>
+              <FavoritesProvider>
+                <Header />
+                <main className="flex-1 w-full pt-20">{children}</main>
+                <Footer />
+              </FavoritesProvider>
+            </CartProvider>
+          </AuthProvider>
         </ToastProvider>
       </body>
     </html>

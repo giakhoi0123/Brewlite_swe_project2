@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
-import { Coffee, Search, ShoppingBag, User } from 'lucide-react';
+import { Coffee, LogOut, Search, ShoppingBag, User as UserIcon, UtensilsCrossed } from 'lucide-react';
+import { useAuth } from '../auth/AuthProvider';
 import { useCart } from '../cart/CartProvider';
 
 const NAV_LINKS = [
@@ -17,7 +18,9 @@ export const Header: React.FC = () => {
   const pathname = usePathname();
   const router = useRouter();
   const { totalQuantity } = useCart();
+  const { user, logout } = useAuth();
   const [query, setQuery] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const handleSearch = (e: FormEvent) => {
     e.preventDefault();
@@ -87,9 +90,62 @@ export const Header: React.FC = () => {
             )}
           </Link>
 
-          <div className="w-8 h-8 rounded-full bg-primary-container text-primary-fixed-dim flex items-center justify-center ring-2 ring-surface-container-high shadow-sm">
-            <User className="w-4 h-4" />
-          </div>
+          {user ? (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMenuOpen(!menuOpen)}
+                aria-label="Tài khoản người dùng"
+                className="w-9 h-9 rounded-full bg-primary-container text-on-primary font-display font-bold text-label-md flex items-center justify-center ring-2 ring-surface-container-high shadow-sm hover:scale-105 transition-transform"
+              >
+                {user.fullName ? user.fullName.charAt(0).toUpperCase() : 'U'}
+              </button>
+
+              {menuOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-surface-container-lowest rounded-xl shadow-xl border border-outline-variant/30 py-2 z-50 animate-in fade-in slide-in-from-top-2">
+                  <div className="px-4 py-2 border-b border-outline-variant/20">
+                    <p className="text-body-sm font-bold text-on-surface truncate">{user.fullName}</p>
+                    <p className="text-label-sm text-on-surface-variant truncate">{user.email}</p>
+                    <span className="inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container">
+                      {user.role === 'BARISTA' ? 'Barista' : user.role === 'MANAGER' ? 'Quản lý' : 'Khách hàng'}
+                    </span>
+                  </div>
+
+                  {user.role === 'BARISTA' && (
+                    <Link
+                      href="/barista"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2 text-body-sm text-secondary hover:bg-surface-container font-semibold transition-colors"
+                    >
+                      <UtensilsCrossed className="w-4 h-4" />
+                      Kênh Barista
+                    </Link>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setMenuOpen(false);
+                      await logout();
+                    }}
+                    className="w-full flex items-center gap-2 px-4 py-2 text-body-sm text-error hover:bg-error-container/20 transition-colors text-left"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Đăng xuất
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              aria-label="Đăng nhập tài khoản"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container text-on-surface hover:text-primary hover:bg-surface-container-high font-display text-label-md transition-colors"
+            >
+              <UserIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">Đăng nhập</span>
+            </Link>
+          )}
         </div>
       </div>
     </header>

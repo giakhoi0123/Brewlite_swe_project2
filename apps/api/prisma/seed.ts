@@ -1,4 +1,5 @@
-import { PrismaClient, OptionType } from '@prisma/client';
+import { PrismaClient, OptionType, UserRole } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
@@ -220,6 +221,38 @@ export async function main() {
   );
 
   console.log(`✅ Successfully seeded ${SEED_PRODUCTS.length} products with inventories and options.`);
+
+  // Seed demo users for Auth and Barista testing
+  const defaultPasswordHash = await bcrypt.hash('Password123!', 10);
+  await prisma.user.upsert({
+    where: { email: 'customer@brewlite.test' },
+    update: {
+      passwordHash: defaultPasswordHash,
+    },
+    create: {
+      id: 'c0000000-0000-0000-0000-000000000001',
+      email: 'customer@brewlite.test',
+      fullName: 'Khách hàng thử nghiệm',
+      passwordHash: defaultPasswordHash,
+      role: UserRole.CUSTOMER,
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { email: 'barista@brewlite.test' },
+    update: {
+      passwordHash: defaultPasswordHash,
+    },
+    create: {
+      id: 'c0000000-0000-0000-0000-000000000002',
+      email: 'barista@brewlite.test',
+      fullName: 'Barista Quầy Pha Chế',
+      passwordHash: defaultPasswordHash,
+      role: UserRole.BARISTA,
+    },
+  });
+
+  console.log('✅ Successfully seeded demo users (customer@brewlite.test, barista@brewlite.test).');
 }
 
 if (require.main === module) {

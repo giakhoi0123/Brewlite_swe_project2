@@ -12,6 +12,41 @@ enum OptionType {
   TOPPING
 }
 
+enum UserRole {
+  CUSTOMER
+  BARISTA
+  MANAGER
+}
+
+model User {
+  id             String    @id @default(uuid()) @db.Uuid
+  email          String    @unique @db.VarChar(255)
+  passwordHash   String    @map("password_hash") @db.VarChar(255)
+  fullName       String    @map("full_name") @db.VarChar(255)
+  role           UserRole  @default(CUSTOMER)
+  sessionVersion Int       @default(1) @map("session_version")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  passwordResetTokens PasswordResetToken[]
+
+  @@map("users")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @map("token_hash") @db.VarChar(255)
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
 model Product {
   id          String   @id @default(uuid()) @db.Uuid
   name        String   @db.VarChar(255)
