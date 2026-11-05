@@ -243,6 +243,18 @@ Một trong những lỗi phổ biến nhất khi triển khai full-stack với 
 
 ## Hướng dẫn thiết lập và khởi chạy Clean Setup (Sprint 1 MVP)
 
+### Tích hợp Products API trên giao diện
+
+- `/thuc-don` lấy danh sách từ `GET /api/products`, hỗ trợ tìm tên không dấu và sắp xếp giá trên danh sách đã tải.
+- `/thuc-don/<UUID>` lấy chi tiết từ `GET /api/products/:id`; các liên kết từ thực đơn sử dụng ID backend.
+- Tên, ảnh, giá, trạng thái đặt món, tồn kho và size/topping đều lấy từ backend. Không tự chuyển sang `MOCK_PRODUCTS` khi API lỗi; giao diện hiển thị lỗi và nút thử lại.
+- API hiện chưa có danh mục, mô tả, đánh giá hoặc doanh số; các trang này chưa hiển thị những trường đó.
+- Giỏ hàng lưu UUID sản phẩm, UUID tùy chọn và snapshot phụ thu từ API để tính lại giá khi đổi size. Snapshot chỉ phục vụ hiển thị; Orders API sau này vẫn phải kiểm tra tồn kho và tính lại giá.
+- Các URL chi tiết theo tên món từ bản mock cũ không còn được dùng. Giỏ cũ trong trình duyệt vẫn được giữ; khi kiểm tra luồng API nên xóa các món mẫu cũ và chọn lại từ thực đơn.
+- Cần chạy và seed backend trước, đồng thời đặt `NEXT_PUBLIC_API_URL` theo `apps/web/.env.example`. Nếu dùng Docker, đổi biến này cần build lại web.
+
+Kiểm thử tích hợp trang với API giả lập: `apps/web/src/components/__tests__/LiveProducts.test.tsx`.
+
 Hướng dẫn này dành cho thành viên mới clone repository hoặc kiểm tra nghiệm thu độc lập trên môi trường sạch không sử dụng Docker cho toàn bộ web/API.
 
 ### 1. Yêu cầu tiên quyết

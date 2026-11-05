@@ -23,9 +23,10 @@ interface MenuHeroProps {
   sort: SortOption;
   onSearchChange: (value: string) => void;
   onSortChange: (value: SortOption) => void;
+  liveData?: boolean;
 }
 
-export const MenuHero: React.FC<MenuHeroProps> = ({ search, sort, onSearchChange, onSortChange }) => (
+export const MenuHero: React.FC<MenuHeroProps> = ({ search, sort, onSearchChange, onSortChange, liveData }) => (
   <section className="w-full bg-gradient-to-b from-surface-container-low via-surface to-surface pb-space-lg">
     <div className="max-w-[1200px] mx-auto px-margin md:px-margin-lg pt-space-md">
       <nav aria-label="Breadcrumb" className="flex items-center gap-space-xs font-display text-label-md text-outline mb-space-md">
@@ -56,7 +57,7 @@ export const MenuHero: React.FC<MenuHeroProps> = ({ search, sort, onSearchChange
             </p>
           </div>
 
-          <div className="flex items-center gap-space-md bg-surface-container-lowest/10 backdrop-blur-md p-space-md rounded-xl text-surface-bright self-start lg:self-auto">
+          {!liveData && <div className="flex items-center gap-space-md bg-surface-container-lowest/10 backdrop-blur-md p-space-md rounded-xl text-surface-bright self-start lg:self-auto">
             {METRICS.map((metric, index) => (
               <div key={metric.label} className="flex items-center gap-space-md">
                 {index > 0 && <div className="w-px h-8 bg-outline-variant/30" />}
@@ -66,7 +67,7 @@ export const MenuHero: React.FC<MenuHeroProps> = ({ search, sort, onSearchChange
                 </div>
               </div>
             ))}
-          </div>
+          </div>}
         </div>
 
         <div className="relative z-10 mt-space-lg pt-space-md flex flex-col md:flex-row gap-space-sm items-stretch md:items-center justify-between">
@@ -93,7 +94,7 @@ export const MenuHero: React.FC<MenuHeroProps> = ({ search, sort, onSearchChange
               aria-label="Sắp xếp món"
               className="bg-transparent text-surface-bright font-display text-label-md py-1 px-space-xs rounded-full focus:outline-none cursor-pointer"
             >
-              {SORT_OPTIONS.map((option) => (
+              {SORT_OPTIONS.filter((option) => !liveData || !['rating', 'best-seller'].includes(option.value)).map((option) => (
                 <option key={option.value} value={option.value} className="bg-primary text-on-primary">
                   {option.label}
                 </option>

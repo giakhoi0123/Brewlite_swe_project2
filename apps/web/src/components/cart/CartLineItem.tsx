@@ -18,10 +18,16 @@ interface CartLineItemProps {
 
 export const CartLineItem: React.FC<CartLineItemProps> = ({ item, product, onQuantityChange, onSizeChange, onRemove }) => {
   const { customization } = item;
+  const sizes = item.productOptions
+    ? item.productOptions.filter((o) => o.type === 'SIZE').map((o) => ({ code: o.id, label: o.name, extraPrice: o.extraPrice }))
+    : SIZE_OPTIONS;
+  const toppingOptions = item.productOptions
+    ? item.productOptions.filter((o) => o.type === 'TOPPING').map((o) => ({ id: o.id, name: o.name, price: o.extraPrice }))
+    : TOPPING_OPTIONS;
   const toppings = customization.toppingIds
-    .map((id) => TOPPING_OPTIONS.find((t) => t.id === id))
+    .map((id) => toppingOptions.find((t) => t.id === id))
     .filter((t): t is NonNullable<typeof t> => Boolean(t));
-  const detailHref = product ? `/thuc-don/${product.slug}` : undefined;
+  const detailHref = item.productOptions ? `/thuc-don/${item.productId}` : product ? `/thuc-don/${product.slug}` : undefined;
 
   return (
     <article
@@ -68,9 +74,10 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({ item, product, onQua
               aria-label={`Chọn size cho ${item.name}`}
               className="w-full appearance-none bg-surface-container-low text-on-surface font-display text-label-md py-1.5 pl-3 pr-8 rounded-full cursor-pointer focus:outline-none focus:bg-surface-container"
             >
-              {SIZE_OPTIONS.map((size) => (
+              {sizes.length === 0 && <option value="">Tiêu chuẩn</option>}
+              {sizes.map((size) => (
                 <option key={size.code} value={size.code}>
-                  Size: {size.code} ({size.extraPrice ? `+${formatCurrency(size.extraPrice)}` : 'Tiêu chuẩn'})
+                  {size.label} ({size.extraPrice ? `+${formatCurrency(size.extraPrice)}` : 'Tiêu chuẩn'})
                 </option>
               ))}
             </select>

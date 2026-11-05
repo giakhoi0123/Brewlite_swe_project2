@@ -23,6 +23,7 @@ export async function fetchProductsFromApi(
 
   try {
     const response = await fetch(url.toString(), {
+      cache: 'no-store',
       signal,
       headers: {
         Accept: 'application/json',
@@ -57,6 +58,7 @@ export async function fetchProductDetailFromApi(
 
   try {
     const response = await fetch(url, {
+      cache: 'no-store',
       signal,
       headers: {
         Accept: 'application/json',
