@@ -1,5 +1,8 @@
 # Payment mock contract — Sprint 2 preparation
 
+> Historical preparation artifact. The accepted Task 5 implementation contract is
+> [`payments-api.md`](./payments-api.md). Future contract changes must be made there.
+
 Status: **Accepted for the Sprint 2 mock contract**. This contract prepares deterministic
 development and test fixtures only. It does not implement a Payment module, database schema
 or real gateway.

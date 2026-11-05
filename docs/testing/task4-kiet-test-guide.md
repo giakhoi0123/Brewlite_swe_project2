@@ -74,7 +74,7 @@ cd ../..
 
 Contract and fixtures:
 
-- `docs/contracts/payment-mock-contract.md`
+- `docs/contracts/payments-api.md`
 - `apps/api/test/fixtures/payment-mock-contract.fixture.ts`
 
 Confirm that success, determinate failure, processing, timeout/unknown, same-key replay,
