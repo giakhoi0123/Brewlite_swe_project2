@@ -109,7 +109,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
         <div className="grid grid-cols-2 gap-space-sm pt-space-xs">
           {SIZE_OPTIONS.map((size) => {
             const active = customization.size === size.code;
-            const Icon = SIZE_ICONS[size.code];
+            const Icon = SIZE_ICONS[size.code as keyof typeof SIZE_ICONS] || Coffee;
             return (
               <button
                 key={size.code}

@@ -1,8 +1,5 @@
 import type { Metadata } from 'next';
-import { MenuView } from '../../components/menu/MenuView';
-import { getCategory } from '../../data/menu-categories';
-import { MOCK_PRODUCTS } from '../../data/menu-products';
-import { CategoryFilter } from '../../lib/menu-filter';
+import { ApiMenu } from '../../components/menu/ApiMenu';
 
 export const metadata: Metadata = {
   title: 'Thực đơn — BrewLite',
@@ -14,9 +11,5 @@ interface MenuPageProps {
 }
 
 export default function MenuPage({ searchParams }: MenuPageProps) {
-  const categoryParam = searchParams['danh-muc'];
-  const initialCategory: CategoryFilter = (categoryParam && getCategory(categoryParam)?.id) || 'all';
-
-  // TODO: thay MOCK_PRODUCTS bằng dữ liệu từ API /products khi backend có đủ category, mô tả, rating.
-  return <MenuView products={MOCK_PRODUCTS} initialSearch={searchParams.q ?? ''} initialCategory={initialCategory} />;
+  return <ApiMenu initialSearch={searchParams.q ?? ''} />;
 }

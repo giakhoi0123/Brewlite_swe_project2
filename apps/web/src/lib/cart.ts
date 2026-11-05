@@ -1,16 +1,19 @@
 import { DrinkCustomization, SizeCode } from '../types/menu';
 import { calcUnitPrice } from './pricing';
+import { ProductOption } from '../types/product';
 
 export interface CartItem {
   lineId: string;
   productId: string;
   name: string;
   imageUrl: string;
-  /** Giá size M chưa topping — để tính lại khi đổi size trong giỏ. */
+  /** Giá cơ bản chưa phụ thu — để tính lại khi đổi size trong giỏ. */
   basePrice: number;
   customization: DrinkCustomization;
   unitPrice: number;
   quantity: number;
+  /** Snapshot tùy chọn API; undefined dành cho giỏ cũ dùng danh mục local. */
+  productOptions?: ProductOption[];
 }
 
 export type NewCartItem = Omit<CartItem, 'lineId' | 'unitPrice'>;
@@ -35,7 +38,7 @@ export function addCartItem(items: CartItem[], item: NewCartItem): CartItem[] {
   return mergeLine(items, {
     ...item,
     lineId: buildLineId(item.productId, item.customization),
-    unitPrice: calcUnitPrice(item.basePrice, item.customization),
+    unitPrice: calcUnitPrice(item.basePrice, item.customization, item.productOptions),
   });
 }
 
@@ -55,12 +58,13 @@ export function changeLineSize(items: CartItem[], lineId: string, size: SizeCode
   if (index === -1 || items[index].customization.size === size) return items;
 
   const current = items[index];
+  if (current.productOptions && !current.productOptions.some((o) => o.type === 'SIZE' && o.id === size)) return items;
   const customization = { ...current.customization, size };
   const updated: CartItem = {
     ...current,
     customization,
     lineId: buildLineId(current.productId, customization),
-    unitPrice: calcUnitPrice(current.basePrice, customization),
+    unitPrice: calcUnitPrice(current.basePrice, customization, current.productOptions),
   };
 
   const duplicate = items.find((i, idx) => idx !== index && i.lineId === updated.lineId);

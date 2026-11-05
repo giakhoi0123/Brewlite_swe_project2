@@ -4,6 +4,7 @@ export interface Product {
   basePrice: number;
   imageUrl: string;
   isAvailable: boolean;
+  canOrder?: boolean;
   createdAt?: string;
 }
 

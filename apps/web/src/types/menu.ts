@@ -59,7 +59,7 @@ export interface MenuProduct {
 
 export type SortOption = 'default' | 'best-seller' | 'price-asc' | 'price-desc' | 'rating';
 
-export type SizeCode = 'M' | 'L';
+export type SizeCode = string;
 
 export interface SizeOption {
   code: SizeCode;

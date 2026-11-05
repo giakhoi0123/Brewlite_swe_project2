@@ -186,7 +186,7 @@ export default function CheckoutPage() {
           productId: it.productId,
           quantity: it.quantity,
           selectedOptions: [
-            it.customization.size,
+            ...(it.customization.size ? [it.customization.size] : []),
             ...(it.customization.toppingIds || []),
           ],
         })),
