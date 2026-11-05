@@ -24,6 +24,11 @@ enum UserRole {
   MANAGER
 }
 
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
 model User {
   id             String   @id @default(uuid()) @db.Uuid
   email          String   @unique @db.VarChar(255)
@@ -31,10 +36,12 @@ model User {
   fullName       String   @map("full_name") @db.VarChar(255)
   role           UserRole @default(CUSTOMER)
   sessionVersion Int      @default(1) @map("session_version")
+  loyaltyPoints  Int      @default(0) @map("loyalty_points")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   passwordResetTokens PasswordResetToken[]
+  loyaltyLogs         LoyaltyLog[]
 
   @@map("users")
 }
@@ -76,7 +83,7 @@ model ProductOption {
   extraPrice Decimal    @default(0) @map("extra_price") @db.Decimal(10, 2)
   createdAt  DateTime   @default(now()) @map("created_at")
 
-  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
   recipes OptionRecipe[]
 
   @@index([productId])
@@ -120,4 +127,36 @@ model OptionRecipe {
   @@id([productOptionId, ingredientId])
   @@index([ingredientId])
   @@map("option_recipes")
+}
+
+model Promotion {
+  id             String       @id @default(uuid()) @db.Uuid
+  code           String       @unique @db.VarChar(50)
+  description    String?      @db.Text
+  discountType   DiscountType @map("discount_type")
+  discountValue  Decimal      @map("discount_value") @db.Decimal(10, 2)
+  minOrderAmount Decimal      @default(0) @map("min_order_amount") @db.Decimal(10, 2)
+  maxDiscount    Decimal?     @map("max_discount") @db.Decimal(10, 2)
+  usageLimit     Int?         @map("usage_limit")
+  usedCount      Int          @default(0) @map("used_count")
+  isActive       Boolean      @default(true) @map("is_active")
+  startDate      DateTime     @map("start_date")
+  endDate        DateTime     @map("end_date")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@map("promotions")
+}
+
+model LoyaltyLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  points    Int
+  reason    String   @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("loyalty_logs")
 }
