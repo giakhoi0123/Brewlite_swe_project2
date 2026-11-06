@@ -9,7 +9,7 @@ import { useCart } from '../cart/CartProvider';
 
 const NAV_LINKS = [
   { href: '/', label: 'Trang chủ' },
-  { href: '/thuc-don', label: 'Thực đơn' },
+  { href: '/products', label: 'Thực đơn' },
   { href: '/khuyen-mai', label: 'Khuyến mãi' },
   { href: '/ve-chung-toi', label: 'Về chúng tôi' },
 ];
@@ -25,7 +25,7 @@ export const Header: React.FC = () => {
   const handleSearch = (e: FormEvent) => {
     e.preventDefault();
     const q = query.trim();
-    router.push(q ? `/thuc-don?q=${encodeURIComponent(q)}` : '/thuc-don');
+    router.push(q ? `/products?q=${encodeURIComponent(q)}` : '/products');
   };
 
   return (

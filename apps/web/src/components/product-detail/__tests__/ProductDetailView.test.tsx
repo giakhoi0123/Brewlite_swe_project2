@@ -37,7 +37,7 @@ describe('ProductDetailView', () => {
     renderDetail();
     expect(screen.getByRole('heading', { level: 1, name: 'Cà Phê Sữa Đá Sài Gòn' })).toBeInTheDocument();
     expect(screen.getByText('Tiết kiệm 14%')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Cà phê' })).toHaveAttribute('href', '/thuc-don?danh-muc=ca-phe');
+    expect(screen.getByRole('link', { name: 'Cà phê' })).toHaveAttribute('href', '/products?danh-muc=ca-phe');
   });
 
   it('đổi ảnh khi bấm thumbnail', async () => {

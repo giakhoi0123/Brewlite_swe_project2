@@ -17,7 +17,7 @@ const PRODUCTS_BY_ID = new Map(MOCK_PRODUCTS.map((p) => [p.id, p]));
 type PendingDelete = { kind: 'line'; lineId: string; name: string } | { kind: 'all' } | null;
 
 export const CartView: React.FC = () => {
-  const { isReady, items, voucherCode, updateQuantity, updateSize, removeItem, clearCart, setVoucherCode } = useCart();
+  const { isReady, isChecking, canCheckout, items, voucherCode, updateQuantity, updateSize, removeItem, clearCart, setVoucherCode } = useCart();
   const { showToast } = useToast();
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
 
@@ -43,7 +43,7 @@ export const CartView: React.FC = () => {
           Trang chủ
         </Link>
         <ChevronRight className="w-3.5 h-3.5" />
-        <Link href="/thuc-don" className="hover:text-secondary transition-colors">
+        <Link href="/products" className="hover:text-secondary transition-colors">
           Thực đơn
         </Link>
         <ChevronRight className="w-3.5 h-3.5" />
@@ -81,6 +81,7 @@ export const CartView: React.FC = () => {
         )}
       </div>
 
+      <p role="status" aria-live="polite" className="mb-4 min-h-6 text-secondary">{isChecking ? 'Đang kiểm tra nguyên liệu cho giỏ hàng...' : ''}</p>
       {!isReady ? (
         <div data-testid="cart-loading" className="grid grid-cols-1 lg:grid-cols-12 gap-gutter-lg animate-pulse">
           <div className="lg:col-span-8 flex flex-col gap-space-md">
@@ -124,6 +125,8 @@ export const CartView: React.FC = () => {
           <aside className="lg:col-span-4 lg:sticky lg:top-24">
             <OrderSummary
               summary={summary}
+              isChecking={isChecking}
+              canCheckout={canCheckout}
               onApplyVoucher={setVoucherCode}
               onRemoveVoucher={() => setVoucherCode(null)}
             />

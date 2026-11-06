@@ -87,3 +87,16 @@ export async function fetchProductDetailFromApi(
     throw new ProductApiError('Không thể kết nối đến máy chủ để lấy thông tin món.');
   }
 }
+
+export interface AvailabilityResult {
+  canOrder: boolean;
+  items: { index: number; availableQuantity: number; canOrder: boolean }[];
+}
+export async function checkCartAvailability(items: { productId: string; customization: { size: string; toppingIds: string[] }; quantity: number }[]): Promise<AvailabilityResult> {
+  const response = await fetch(API_BASE_URL + '/products/availability', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
+    body: JSON.stringify({ items: items.map(i => ({ productId: i.productId, sizeId: i.customization.size, toppingIds: i.customization.toppingIds, quantity: i.quantity })) }),
+  });
+  if (!response.ok) throw new Error('Không thể kiểm tra nguyên liệu. Vui lòng thử lại.');
+  return response.json();
+}

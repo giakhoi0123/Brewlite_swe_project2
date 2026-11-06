@@ -11,7 +11,7 @@ export const EmptyCart: React.FC = () => (
       Hãy chọn một ly cà phê đậm đà thơm ngát từ xưởng rang BrewLite để bắt đầu một ngày ngập tràn cảm hứng.
     </p>
     <Link
-      href="/thuc-don"
+      href="/products"
       className="px-space-xl py-3.5 rounded-full bg-primary-container text-on-primary font-display text-label-lg font-bold shadow-md hover:bg-primary transition-transform active:scale-95 inline-flex items-center gap-space-xs"
     >
       <BookOpen className="w-5 h-5" />

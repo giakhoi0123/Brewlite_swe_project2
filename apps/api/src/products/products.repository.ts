@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, ProductOption } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 export type ProductWithInventory = Prisma.ProductGetPayload<{
-  include: { inventory: { select: { quantity: true; reserved: true } } };
+  include: { inventory: { select: { quantity: true; reserved: true } }; options: { include: { recipes: { include: { ingredient: true } } } } };
 }>;
 
 export type ProductWithDetails = ProductWithInventory & {
-  options: ProductOption[];
+
 };
 
 @Injectable()
@@ -26,7 +26,7 @@ export class ProductsRepository {
 
     return this.prisma.product.findMany({
       where: whereClause,
-      include: { inventory: { select: { quantity: true, reserved: true } } },
+      include: { inventory: { select: { quantity: true, reserved: true } }, options: { include: { recipes: { include: { ingredient: true } } } } },
       orderBy: {
         name: 'asc',
       },
@@ -38,6 +38,7 @@ export class ProductsRepository {
       where: { id },
       include: {
         options: {
+          include: { recipes: { include: { ingredient: true } } },
           orderBy: [
             { type: 'asc' },
             { extraPrice: 'asc' },

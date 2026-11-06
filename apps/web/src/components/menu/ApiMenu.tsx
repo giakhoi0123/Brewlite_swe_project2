@@ -59,17 +59,17 @@ export function ApiMenu({ initialSearch = '' }: { initialSearch?: string }) {
           {visible.map((product) => {
             const available = product.isAvailable && product.canOrder !== false;
             return <article key={product.id} className="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col gap-3">
-              <Link href={`/thuc-don/${product.id}`}>
+              <Link href={`/products/${product.id}`}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={product.imageUrl} alt={product.name} className="w-full h-56 object-cover rounded-lg bg-surface-container" />
               </Link>
               <div className="flex items-start justify-between gap-2">
-                <h3 className="font-display text-headline-sm"><Link href={`/thuc-don/${product.id}`}>{product.name}</Link></h3>
+                <h3 className="font-display text-headline-sm"><Link href={`/products/${product.id}`}>{product.name}</Link></h3>
                 <button aria-label={`Yêu thích ${product.name}`} aria-pressed={isFavorite(product.id)} onClick={() => toggleFavorite(product.id)} className="text-secondary text-xl">{isFavorite(product.id) ? '♥' : '♡'}</button>
               </div>
               <p className="text-primary font-bold text-headline-sm">{formatCurrency(product.basePrice)}</p>
               <p className="text-body-sm text-on-surface-variant">{available ? 'Còn món' : 'Tạm hết món'}</p>
-              <Link href={`/thuc-don/${product.id}`} className="mt-auto text-center py-3 rounded-full bg-primary text-on-primary">{available ? 'Chọn món' : 'Xem chi tiết'}</Link>
+              <Link href={`/products/${product.id}`} className="mt-auto text-center py-3 rounded-full bg-primary text-on-primary">{available ? 'Chọn món' : 'Xem chi tiết'}</Link>
             </article>;
           })}
         </div>}
