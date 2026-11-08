@@ -1,0 +1,1094 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
+import {
+  Order,
+  OrderStatus,
+  Prisma,
+  ReservationStatus,
+  UserRole,
+} from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { PromotionsService } from '../promotions/promotions.service';
+import { CreateOrderDto } from './dto/create-order.dto';
+import { BaristaQueueQueryDto } from './dto/barista-queue-query.dto';
+import { aggregateIngredientRequirements } from './ingredient-requirements';
+import { generateOrderNumber } from './order-number';
+import {
+  calculateItemPrice,
+  calculateOrderPricing,
+  mapBaristaOrderResponse,
+  mapOrderResponse,
+} from './order-pricing';
+import {
+  allowedTransitions,
+  canActorPerformTransition,
+  canTransition,
+  isCancellableStatus,
+} from './order-state-machine';
+import { validateOrderSelection } from './order-validation';
+import {
+  ConcurrentStockConflictException,
+  IngredientNotFoundException,
+  InsufficientIngredientStockException,
+  InvalidOrderTransitionException,
+  InvalidVoucherException,
+  OrderActionForbiddenException,
+  OrderCancellationNotAllowedException,
+  OrderNotFoundException,
+  OrderNumberConflictException,
+  OrderStateConflictException,
+  ReservationAlreadyConsumedException,
+  ReservationNotFoundException,
+  ReservationStateConflictException,
+  UserNotFoundException,
+} from './orders.exceptions';
+import {
+  BaristaOrderResponse,
+  BaristaQueueResult,
+  CreateOrderItemResponse,
+  CreateOrderResult,
+} from './orders.types';
+
+@Injectable()
+export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly promotionsService?: PromotionsService,
+  ) {}
+
+  /**
+   * Phương thức nghiệp vụ tạo đơn hàng (Create Order):
+   * 1. Nhận authenticatedUserId từ controller (JWT payload).
+   * 2. Thực thi toàn bộ quy trình trong một Prisma Interactive Transaction.
+   * 3. Chống overselling và deadlock bằng pessimistic row lock (SELECT FOR UPDATE) sắp xếp ID tăng dần.
+   * 4. Trừ tồn kho Ingredient, ghi nhận Reservation ACTIVE và tạo Order PENDING.
+   * 5. Retry có kiểm soát đối với các xung đột concurrency retryable (tối đa 3 lần).
+   */
+  async createOrder(
+    authenticatedUserId: string,
+    dto: CreateOrderDto,
+  ): Promise<CreateOrderResult> {
+    const maxAttempts = 3;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => {
+            return await this.executeCreateOrderTransaction(
+              tx,
+              authenticatedUserId,
+              dto,
+            );
+          },
+          {
+            maxWait: 5000,
+            timeout: 10000,
+          },
+        );
+      } catch (error: unknown) {
+        // Phân loại lỗi: Không retry lỗi nghiệp vụ và validation
+        if (this.isNonRetryableError(error)) {
+          throw error;
+        }
+
+        // Lỗi concurrency có thể retry (deadlock, serialization failure, unique order number conflict)
+        const isRetryable = this.isRetryableConcurrencyError(error);
+
+        if (isRetryable && attempt < maxAttempts) {
+          this.logger.warn(
+            `Giao dịch tạo đơn gặp xung đột concurrency (lần thử ${attempt}/${maxAttempts}). Đang thử lại...`,
+          );
+          // Exponential backoff nhẹ kèm jitter
+          const backoffMs = attempt * 50 + Math.floor(Math.random() * 20);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          continue;
+        }
+
+        // Nếu hết lượt retry hoặc lỗi không xử lý được
+        if (error instanceof Prisma.PrismaClientKnownRequestError) {
+          if (error.code === 'P2002') {
+            throw new OrderNumberConflictException();
+          }
+          if (error.code === 'P2034') {
+            throw new ConcurrentStockConflictException();
+          }
+        }
+
+        throw error;
+      }
+    }
+
+    throw new ConcurrentStockConflictException();
+  }
+
+  /**
+   * Truy vấn đơn hàng theo ID kèm đầy đủ thông tin chi tiết:
+   * Items, Options snapshot, Reservation, Reservation lines, và Lịch sử trạng thái.
+   */
+  async getOrderById(orderId: string): Promise<Order> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            orderItemOptions: true,
+          },
+        },
+        reservation: {
+          include: {
+            lines: true,
+          },
+        },
+        statusHistory: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new OrderNotFoundException(orderId);
+    }
+
+    return order;
+  }
+
+  /**
+   * Quản lý chuyển trạng thái Order và vòng đời Inventory Reservation tập trung:
+   * - Thực thi trong cùng một Prisma Transaction.
+   * - Kiểm tra Idempotency: Nếu trạng thái đã là targetStatus, trả về Order hiện tại mà không lặp thao tác.
+   * - Xác thực chuyển trạng thái theo pure state machine.
+   * - Kiểm soát concurrency bằng optimistic locking qua trường `version` (guarded update).
+   * - Cập nhật vòng đời Reservation: ACTIVE -> CONSUMED hoặc ACTIVE -> RELEASED.
+   * - Hoàn kho chính xác theo snapshot lines khi hủy, khóa Ingredient theo thứ tự ID tăng dần chống deadlock.
+   */
+  async transitionOrderStatus(
+    orderId: string,
+    targetStatus: OrderStatus,
+    actor?: { userId?: string; role?: string },
+    reason?: string,
+  ): Promise<Order> {
+    return await this.prisma.$transaction(
+      async (tx) => {
+        return await this.executeTransitionOrderStatusTransaction(
+          tx,
+          orderId,
+          targetStatus,
+          actor,
+          reason,
+        );
+      },
+      {
+        maxWait: 5000,
+        timeout: 10000,
+      },
+    );
+  }
+
+  /**
+   * Ranh giới tích hợp với Payment Gateway: Thông báo thanh toán thành công (PAID).
+   * - Idempotent: Nếu đơn đã PAID, trả về kết quả thành công mà không trừ kho lặp.
+   */
+  async handlePaymentSuccess(
+    orderId: string,
+    actorId?: string,
+  ): Promise<Order> {
+    const isUuid =
+      actorId &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        actorId,
+      );
+    return await this.transitionOrderStatus(
+      orderId,
+      OrderStatus.PAID,
+      { userId: isUuid ? actorId : undefined, role: 'SYSTEM' },
+      'Payment processed successfully',
+    );
+  }
+
+  /**
+   * Ranh giới tích hợp với Payment Gateway: Thông báo thanh toán thất bại (PAYMENT_FAILED).
+   * - Tự động hoàn kho nguyên liệu về Ingredient.stock và đánh dấu Reservation là RELEASED.
+   * - Idempotent: Nếu đơn đã PAYMENT_FAILED, không hoàn kho lần hai.
+   */
+  async handlePaymentFailure(
+    orderId: string,
+    actorId?: string,
+    reason?: string,
+  ): Promise<Order> {
+    const isUuid =
+      actorId &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        actorId,
+      );
+    return await this.transitionOrderStatus(
+      orderId,
+      OrderStatus.PAYMENT_FAILED,
+      { userId: isUuid ? actorId : undefined, role: 'SYSTEM' },
+      reason || 'Payment declined or failed',
+    );
+  }
+
+  /**
+   * Nghiệp vụ hủy đơn hàng (CANCELLED):
+   * - Chỉ cho phép hủy từ các trạng thái hợp lệ (PENDING hoặc PAYMENT_FAILED).
+   * - Từ chối hủy nếu đơn đã ở PAID/PREPARING/READY/COMPLETED hoặc Reservation đã CONSUMED.
+   * - Hoàn kho nguyên liệu đúng lượng snapshot nếu Reservation đang ACTIVE.
+   * - Idempotent: Nếu đơn đã CANCELLED, không hoàn kho lần hai.
+   */
+  async cancelOrder(
+    orderId: string,
+    actor?: { userId?: string; role?: UserRole | string },
+    reason?: string,
+  ): Promise<Order> {
+    const role = actor?.role || UserRole.CUSTOMER;
+    return await this.transitionOrderStatus(
+      orderId,
+      OrderStatus.CANCELLED,
+      { userId: actor?.userId, role },
+      reason || 'Order cancelled',
+    );
+  }
+
+  /**
+   * Truy vấn hàng đợi đơn hàng phục vụ Barista pha chế (GET /api/barista/orders):
+   * - Mặc định chỉ lấy các đơn ở trạng thái: PAID, PREPARING, READY.
+   * - Tuyệt đối không lấy: PENDING, PAYMENT_FAILED, CANCELLED, COMPLETED.
+   * - Hỗ trợ lọc theo query.status (nếu có, phải thuộc 3 trạng thái trên).
+   * - Sắp xếp tất định FIFO theo thời điểm tạo đơn: createdAt ASC, id ASC.
+   * - Phân trang an toàn (mặc định page=1, limit=20, tối đa 50).
+   * - Tuyệt đối không có N+1 query.
+   * - Trả về dữ liệu an toàn, không rò rỉ thông tin nội bộ (stock, cost, reservation lines, hash).
+   */
+  async getBaristaQueue(
+    query: BaristaQueueQueryDto,
+  ): Promise<BaristaQueueResult> {
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.min(50, Math.max(1, query.limit || 20));
+    const skip = (page - 1) * limit;
+
+    // Kiểm tra query.status nếu có
+    const validBaristaStatuses: readonly OrderStatus[] = [
+      OrderStatus.PAID,
+      OrderStatus.PREPARING,
+      OrderStatus.READY,
+    ];
+
+    if (
+      query.status &&
+      !validBaristaStatuses.includes(query.status as unknown as OrderStatus)
+    ) {
+      throw new BadRequestException(
+        'Trạng thái lọc trong hàng đợi Barista chỉ chấp nhận: PAID, PREPARING, READY',
+      );
+    }
+
+    const where: Prisma.OrderWhereInput = {
+      status: query.status
+        ? (query.status as OrderStatus)
+        : {
+            in: [
+              OrderStatus.PAID,
+              OrderStatus.PREPARING,
+              OrderStatus.READY,
+            ],
+          },
+    };
+
+    const [total, orders] = await Promise.all([
+      this.prisma.order.count({ where }),
+      this.prisma.order.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        include: {
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+            },
+          },
+          items: {
+            include: {
+              orderItemOptions: true,
+            },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      data: orders.map((order) => mapBaristaOrderResponse(order)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: total === 0 ? 0 : Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Barista tiếp nhận đơn và bắt đầu pha chế:
+   * Action: accept -> Chuyển trạng thái PAID -> PREPARING.
+   * Ghi nhận OrderStatusHistory với actorId từ JWT.
+   */
+  async acceptBaristaOrder(
+    orderId: string,
+    actor?: { userId?: string; role?: string },
+  ): Promise<BaristaOrderResponse> {
+    const updatedOrder = await this.transitionOrderStatus(
+      orderId,
+      OrderStatus.PREPARING,
+      actor,
+      'Barista accepted order and started preparing',
+    );
+    return mapBaristaOrderResponse(updatedOrder);
+  }
+
+  /**
+   * Barista hoàn tất pha chế món và đưa vào hàng chờ nhận:
+   * Action: ready -> Chuyển trạng thái PREPARING -> READY.
+   */
+  async readyBaristaOrder(
+    orderId: string,
+    actor?: { userId?: string; role?: string },
+  ): Promise<BaristaOrderResponse> {
+    const updatedOrder = await this.transitionOrderStatus(
+      orderId,
+      OrderStatus.READY,
+      actor,
+      'Barista finished preparation, order ready for pickup',
+    );
+    return mapBaristaOrderResponse(updatedOrder);
+  }
+
+  /**
+   * Barista giao hàng thành công cho khách hàng:
+   * Action: complete -> Chuyển trạng thái READY -> COMPLETED.
+   */
+  async completeBaristaOrder(
+    orderId: string,
+    actor?: { userId?: string; role?: string },
+  ): Promise<BaristaOrderResponse> {
+    const updatedOrder = await this.transitionOrderStatus(
+      orderId,
+      OrderStatus.COMPLETED,
+      actor,
+      'Barista completed order handover to customer',
+    );
+    return mapBaristaOrderResponse(updatedOrder);
+  }
+
+
+  /**
+   * Thực thi logic chuyển trạng thái đơn hàng trong phạm vi Prisma Transaction.
+   */
+  private async executeTransitionOrderStatusTransaction(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    targetStatus: OrderStatus,
+    actor?: { userId?: string; role?: string },
+    reason?: string,
+  ): Promise<Order> {
+    // Kiểm tra UUID hợp lệ trước khi truy vấn PostgreSQL để tránh lỗi database driver P2023
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        orderId,
+      );
+    if (!isUuid) {
+      throw new OrderNotFoundException(orderId);
+    }
+
+    // 1. Nạp Order kèm User, Reservation, Reservation Lines và Items
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+          },
+        },
+        reservation: {
+          include: {
+            lines: true,
+          },
+        },
+        items: {
+          include: {
+            orderItemOptions: true,
+          },
+        },
+        statusHistory: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new OrderNotFoundException(orderId);
+    }
+
+    // 2. IDEMPOTENCY CHECK:
+    // Nếu đơn hàng đã ở targetStatus rồi, trả về nguyên bản (no-op, không tăng version, không restock lại)
+    if (order.status === targetStatus) {
+      this.logger.log(
+        `Idempotent transition request: Order "${orderId}" is already in "${targetStatus}".`,
+      );
+      return order;
+    }
+
+    // 3. XÁC THỰC STATE MACHINE:
+    if (!canTransition(order.status, targetStatus)) {
+      if (
+        targetStatus === OrderStatus.CANCELLED &&
+        !isCancellableStatus(order.status)
+      ) {
+        throw new OrderCancellationNotAllowedException(order.id, order.status);
+      }
+      throw new InvalidOrderTransitionException(
+        order.status,
+        targetStatus,
+        allowedTransitions(order.status),
+      );
+    }
+
+    // 4. KIỂM TRA QUYỀN CỦA VAI TRÒ (Actor RBAC Verification theo Pure State Machine):
+    if (!canActorPerformTransition(actor?.role, order.status, targetStatus)) {
+      throw new OrderActionForbiddenException(
+        actor?.role || 'UNKNOWN',
+        order.status,
+        targetStatus,
+      );
+    }
+
+    // 5. QUẢN LÝ VÒNG ĐỜI INVENTORY RESERVATION & NGUYÊN LIỆU:
+    const reservation = order.reservation;
+    if (!reservation) {
+      throw new ReservationNotFoundException(order.id);
+    }
+
+    // Sắp xếp các reservation lines theo ingredientId tăng dần để khóa theo thứ tự nhất quán chống deadlock
+    const sortedLines = [...reservation.lines].sort((a, b) =>
+      a.ingredientId.localeCompare(b.ingredientId),
+    );
+    const sortedIngredientIds = sortedLines.map((l) => l.ingredientId);
+
+    // Kịch bản A: Chuyển sang PAID (từ PENDING)
+    if (targetStatus === OrderStatus.PAID) {
+      if (reservation.status === ReservationStatus.RELEASED) {
+        throw new InvalidOrderTransitionException(
+          order.status,
+          targetStatus,
+          allowedTransitions(order.status),
+        );
+      }
+
+      if (reservation.status === ReservationStatus.ACTIVE) {
+        // Guarded update Reservation: ACTIVE -> CONSUMED
+        const resUpdate = await tx.orderInventoryReservation.updateMany({
+          where: {
+            id: reservation.id,
+            status: ReservationStatus.ACTIVE,
+            version: reservation.version,
+          },
+          data: {
+            status: ReservationStatus.CONSUMED,
+            consumedAt: new Date(),
+            releasedAt: null,
+            version: { increment: 1 },
+          },
+        });
+
+        if (resUpdate.count !== 1) {
+          throw new ReservationStateConflictException(
+            reservation.id,
+            reservation.version,
+          );
+        }
+      }
+      // Không trừ stock lần hai vì stock đã được trừ khi tạo đơn (lúc PENDING)
+    }
+
+    // Kịch bản B: Chuyển sang CANCELLED hoặc PAYMENT_FAILED (từ PENDING hoặc PAYMENT_FAILED)
+    else if (
+      targetStatus === OrderStatus.CANCELLED ||
+      targetStatus === OrderStatus.PAYMENT_FAILED
+    ) {
+      // Nếu reservation đã bị CONSUMED, từ chối hủy / hoàn kho
+      if (reservation.status === ReservationStatus.CONSUMED) {
+        throw new ReservationAlreadyConsumedException(order.id);
+      }
+
+      // Chỉ thực hiện hoàn kho nếu reservation đang ACTIVE (chưa RELEASED)
+      if (reservation.status === ReservationStatus.ACTIVE) {
+        // Khóa các nguyên liệu theo thứ tự ID tăng dần chống deadlock
+        const lockedIngredients = await this.lockIngredients(
+          tx,
+          sortedIngredientIds,
+        );
+
+        // Hoàn kho từng nguyên liệu theo đúng số lượng snapshot trong reservation lines
+        for (const line of sortedLines) {
+          const ingredient = lockedIngredients.get(line.ingredientId);
+          if (!ingredient) {
+            throw new IngredientNotFoundException(line.ingredientId);
+          }
+
+          const newStock = ingredient.stock.plus(line.amount);
+
+          const ingUpdate = await tx.ingredient.updateMany({
+            where: {
+              id: ingredient.id,
+              version: ingredient.version,
+            },
+            data: {
+              stock: newStock,
+              version: { increment: 1 },
+            },
+          });
+
+          if (ingUpdate.count !== 1) {
+            throw new ConcurrentStockConflictException(ingredient.id);
+          }
+        }
+
+        // Guarded update Reservation: ACTIVE -> RELEASED
+        const resUpdate = await tx.orderInventoryReservation.updateMany({
+          where: {
+            id: reservation.id,
+            status: ReservationStatus.ACTIVE,
+            version: reservation.version,
+          },
+          data: {
+            status: ReservationStatus.RELEASED,
+            releasedAt: new Date(),
+            consumedAt: null,
+            version: { increment: 1 },
+          },
+        });
+
+        if (resUpdate.count !== 1) {
+          throw new ReservationStateConflictException(
+            reservation.id,
+            reservation.version,
+          );
+        }
+      }
+      // Nếu reservation đã là RELEASED (ví dụ chuyển từ PAYMENT_FAILED -> CANCELLED),
+      // thì giữ nguyên reservation RELEASED, không hoàn kho lần hai!
+    }
+
+    // Kịch bản C: Chuyển sang PENDING (từ PAYMENT_FAILED - retry flow)
+    else if (
+      order.status === OrderStatus.PAYMENT_FAILED &&
+      targetStatus === OrderStatus.PENDING
+    ) {
+      if (reservation.status === ReservationStatus.RELEASED) {
+        // Tái giữ kho (re-reserve): kiểm tra tồn kho và trừ lại
+        const lockedIngredients = await this.lockIngredients(
+          tx,
+          sortedIngredientIds,
+        );
+
+        for (const line of sortedLines) {
+          const ingredient = lockedIngredients.get(line.ingredientId);
+          if (!ingredient) {
+            throw new IngredientNotFoundException(line.ingredientId);
+          }
+
+          if (ingredient.stock.lt(line.amount)) {
+            throw new InsufficientIngredientStockException(
+              ingredient.id,
+              ingredient.name,
+              line.amount.toString(),
+              ingredient.stock.toString(),
+            );
+          }
+        }
+
+        for (const line of sortedLines) {
+          const ingredient = lockedIngredients.get(line.ingredientId)!;
+          const newStock = ingredient.stock.minus(line.amount);
+
+          const ingUpdate = await tx.ingredient.updateMany({
+            where: {
+              id: ingredient.id,
+              version: ingredient.version,
+              stock: { gte: line.amount },
+            },
+            data: {
+              stock: newStock,
+              version: { increment: 1 },
+            },
+          });
+
+          if (ingUpdate.count !== 1) {
+            throw new ConcurrentStockConflictException(ingredient.id);
+          }
+        }
+
+        // Guarded update Reservation: RELEASED -> ACTIVE
+        const resUpdate = await tx.orderInventoryReservation.updateMany({
+          where: {
+            id: reservation.id,
+            status: ReservationStatus.RELEASED,
+            version: reservation.version,
+          },
+          data: {
+            status: ReservationStatus.ACTIVE,
+            releasedAt: null,
+            consumedAt: null,
+            version: { increment: 1 },
+          },
+        });
+
+        if (resUpdate.count !== 1) {
+          throw new ReservationStateConflictException(
+            reservation.id,
+            reservation.version,
+          );
+        }
+      }
+    }
+
+    // Kịch bản D: Các bước Barista (PAID -> PREPARING -> READY -> COMPLETED)
+    // Reservation giữ nguyên CONSUMED, stock không thay đổi
+
+    // 6. GUARDED UPDATE TRÊN ORDER (Optimistic Concurrency Control):
+    // Chỉ cập nhật nếu id, status và version khớp chính xác bản ghi đã đọc
+    const orderUpdate = await tx.order.updateMany({
+      where: {
+        id: order.id,
+        status: order.status,
+        version: order.version,
+      },
+      data: {
+        status: targetStatus,
+        version: { increment: 1 },
+      },
+    });
+
+    if (orderUpdate.count !== 1) {
+      throw new OrderStateConflictException(order.id, order.version);
+    }
+
+    // 7. GHI NHẬN LỊCH SỬ CHUYỂN TRẠNG THÁI (OrderStatusHistory):
+    const actorUuid =
+      actor?.userId &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        actor.userId,
+      )
+        ? actor.userId
+        : null;
+
+    await tx.orderStatusHistory.create({
+      data: {
+        orderId: order.id,
+        fromStatus: order.status,
+        toStatus: targetStatus,
+        actorId: actorUuid,
+        reason: reason ?? null,
+      },
+    });
+
+    // 8. TRẢ VỀ ORDER ĐÃ CẬP NHẬT
+    return await tx.order.findUniqueOrThrow({
+      where: { id: order.id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+          },
+        },
+        reservation: {
+          include: {
+            lines: true,
+          },
+        },
+        items: {
+          include: {
+            orderItemOptions: true,
+          },
+        },
+        statusHistory: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+  }
+
+  /**
+   * Thực thi toàn bộ logic tạo đơn hàng trong phạm vi một database transaction.
+   */
+  private async executeCreateOrderTransaction(
+    tx: Prisma.TransactionClient,
+    authenticatedUserId: string,
+    dto: CreateOrderDto,
+  ): Promise<CreateOrderResult> {
+    // 1. Xác minh authenticatedUserId có User tồn tại
+    const user = await tx.user.findUnique({
+      where: { id: authenticatedUserId },
+      select: { id: true },
+    });
+    if (!user) {
+      throw new UserNotFoundException(authenticatedUserId);
+    }
+
+    // 2. Thu thập danh sách ID duy nhất của Products và Options
+    const productIds = Array.from(new Set(dto.items.map((i) => i.productId)));
+    const allOptionIds = Array.from(
+      new Set(dto.items.flatMap((i) => i.selectedOptions ?? [])),
+    );
+
+    // 3. Nạp danh sách Product từ database
+    const products = await tx.product.findMany({
+      where: { id: { in: productIds } },
+      select: {
+        id: true,
+        name: true,
+        basePrice: true,
+        isAvailable: true,
+      },
+    });
+    const productsMap = new Map(products.map((p) => [p.id, p]));
+
+    // 4. Nạp danh sách ProductOption cùng OptionRecipe và Ingredient
+    const options = await tx.productOption.findMany({
+      where: { id: { in: allOptionIds } },
+      include: {
+        recipes: {
+          include: {
+            ingredient: {
+              select: { id: true, name: true },
+            },
+          },
+        },
+      },
+    });
+    const optionsMap = new Map(options.map((o) => [o.id, o]));
+
+    // 5. Xác thực toàn bộ sản phẩm và tùy chọn (defense-in-depth)
+    const validatedItems = validateOrderSelection(
+      dto.items,
+      productsMap,
+      optionsMap,
+    );
+
+    // 6. Tính giá từng món hoàn toàn từ database
+    const calculatedItems = validatedItems.map((item) =>
+      calculateItemPrice({
+        product: item.product,
+        quantity: item.quantity,
+        options: item.options,
+        notes: item.notes,
+      }),
+    );
+
+    // 7. Xử lý Voucher / Promotion boundary (nếu có)
+    let discountAmount = new Prisma.Decimal(0);
+    let promotionId: string | undefined;
+
+    if (dto.voucherCode) {
+      const rawSubtotal = calculatedItems.reduce(
+        (acc, item) => acc.plus(item.subtotal),
+        new Prisma.Decimal(0),
+      );
+
+      if (this.promotionsService) {
+        try {
+          const promoResult =
+            await this.promotionsService.validateAndCalculateDiscount({
+              code: dto.voucherCode,
+              orderAmount: rawSubtotal.toNumber(),
+            });
+          discountAmount = new Prisma.Decimal(promoResult.discountAmount);
+          promotionId = promoResult.promotionId;
+        } catch (err: unknown) {
+          if (
+            err instanceof BadRequestException ||
+            err instanceof NotFoundException
+          ) {
+            throw new InvalidVoucherException(
+              dto.voucherCode,
+              (err as Error).message,
+            );
+          }
+          throw err;
+        }
+      } else {
+        throw new InvalidVoucherException(
+          dto.voucherCode,
+          'Dịch vụ khuyến mãi hiện không khả dụng.',
+        );
+      }
+    }
+
+    // 8. Tính giá tổng đơn hàng và cap discount an toàn (0 <= discount <= subtotal)
+    const calculatedPricing = calculateOrderPricing(
+      calculatedItems,
+      discountAmount,
+      { voucherCode: dto.voucherCode, promotionId },
+    );
+
+    // 9. Tổng hợp nhu cầu nguyên liệu cho toàn bộ đơn hàng
+    const ingredientInputs = validatedItems.map((item) => ({
+      quantity: item.quantity,
+      recipes: item.options.flatMap((opt) =>
+        opt.recipes.map((r) => ({
+          ingredientId: r.ingredientId,
+          ingredientName: r.ingredient?.name,
+          amount: r.amount,
+        })),
+      ),
+    }));
+
+    const aggregatedRequirements =
+      aggregateIngredientRequirements(ingredientInputs);
+    const sortedIngredientIds = aggregatedRequirements.map(
+      (r) => r.ingredientId,
+    );
+
+    // 10. Khóa các dòng Ingredient bằng SELECT ... FOR UPDATE theo thứ tự id tăng dần
+    const lockedIngredients = await this.lockIngredients(
+      tx,
+      sortedIngredientIds,
+    );
+
+    // 11. Kiểm tra đủ tồn kho cho toàn bộ nguyên liệu
+    for (const req of aggregatedRequirements) {
+      const ingredient = lockedIngredients.get(req.ingredientId);
+      if (!ingredient) {
+        throw new IngredientNotFoundException(req.ingredientId);
+      }
+
+      if (ingredient.stock.lt(req.totalAmount)) {
+        throw new InsufficientIngredientStockException(
+          ingredient.id,
+          ingredient.name,
+          req.totalAmount.toString(),
+          ingredient.stock.toString(),
+        );
+      }
+    }
+
+    // 12. Trừ tồn kho và tăng version với optimistic lock guard
+    for (const req of aggregatedRequirements) {
+      const ingredient = lockedIngredients.get(req.ingredientId)!;
+      const newStock = ingredient.stock.minus(req.totalAmount);
+
+      const updateResult = await tx.ingredient.updateMany({
+        where: {
+          id: ingredient.id,
+          version: ingredient.version,
+          stock: { gte: req.totalAmount },
+        },
+        data: {
+          stock: newStock,
+          version: { increment: 1 },
+        },
+      });
+
+      if (updateResult.count !== 1) {
+        throw new ConcurrentStockConflictException(ingredient.id);
+      }
+    }
+
+    // 13. Tạo Order trạng thái PENDING
+    const orderNumber = generateOrderNumber();
+    const order = await tx.order.create({
+      data: {
+        orderNumber,
+        userId: authenticatedUserId,
+        status: OrderStatus.PENDING,
+        subtotal: calculatedPricing.subtotal,
+        discount: calculatedPricing.discount,
+        total: calculatedPricing.total,
+        voucherCode: calculatedPricing.voucherCode ?? null,
+        promotionId: calculatedPricing.promotionId ?? null,
+        notes: dto.notes ?? null,
+        version: 1,
+      },
+    });
+
+    // 14. Tạo OrderItem, OrderItemOption và optionsSnapshot
+    for (const item of calculatedPricing.items) {
+      const orderItem = await tx.orderItem.create({
+        data: {
+          orderId: order.id,
+          productId: item.productId,
+          productNameSnapshot: item.productName,
+          unitPriceSnapshot: item.unitPrice,
+          quantity: item.quantity,
+          subtotal: item.subtotal,
+          notes: item.notes ?? null,
+          optionsSnapshot: item.optionsSnapshot,
+        },
+      });
+
+      for (const opt of item.options) {
+        await tx.orderItemOption.create({
+          data: {
+            orderItemId: orderItem.id,
+            productOptionId: opt.optionId,
+            optionNameSnapshot: opt.optionName,
+            optionType: opt.optionType,
+            extraPriceSnapshot: opt.extraPrice,
+          },
+        });
+      }
+    }
+
+    // 15. Tạo đúng 1 OrderInventoryReservation trạng thái ACTIVE
+    const reservation = await tx.orderInventoryReservation.create({
+      data: {
+        orderId: order.id,
+        status: ReservationStatus.ACTIVE,
+        version: 1,
+      },
+    });
+
+    // 16. Tạo OrderReservationLine đã cộng gộp theo ingredientId
+    for (const req of aggregatedRequirements) {
+      await tx.orderReservationLine.create({
+        data: {
+          reservationId: reservation.id,
+          ingredientId: req.ingredientId,
+          amount: req.totalAmount,
+        },
+      });
+    }
+
+    // 17. Tạo OrderStatusHistory đầu tiên (null -> PENDING)
+    await tx.orderStatusHistory.create({
+      data: {
+        orderId: order.id,
+        fromStatus: null,
+        toStatus: OrderStatus.PENDING,
+        actorId: authenticatedUserId,
+        reason: 'Order created',
+      },
+    });
+
+    // 18. Ánh xạ trả về kết quả theo typed client contract (chuẩn hóa đầy đủ orderId, items và options snapshot)
+    const responseItems: CreateOrderItemResponse[] = calculatedPricing.items.map(
+      (item) => ({
+        productId: item.productId,
+        productName: item.productName,
+        unitPrice: item.unitPrice.toNumber(),
+        quantity: item.quantity,
+        subtotal: item.subtotal.toNumber(),
+        notes: item.notes ?? null,
+        options: item.optionsSnapshot,
+      }),
+    );
+
+    return mapOrderResponse(order, responseItems);
+  }
+
+  /**
+   * Khóa bi quan (pessimistic row locking) các dòng nguyên liệu bằng SELECT ... FOR UPDATE.
+   * Sắp xếp id tăng dần để loại bỏ hoàn toàn khả năng deadlock giữa các transaction chạy song song.
+   */
+  protected async lockIngredients(
+    tx: Prisma.TransactionClient,
+    sortedIngredientIds: string[],
+  ): Promise<
+    Map<
+      string,
+      { id: string; name: string; stock: Prisma.Decimal; version: number }
+    >
+  > {
+    if (sortedIngredientIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await tx.$queryRaw<
+      Array<{
+        id: string;
+        name: string;
+        stock: Prisma.Decimal;
+        version: number;
+      }>
+    >`
+      SELECT id, name, stock, version
+      FROM ingredients
+      WHERE id IN (${Prisma.join(
+        sortedIngredientIds.map((id) => Prisma.sql`${id}::uuid`),
+      )})
+      ORDER BY id ASC
+      FOR UPDATE
+    `;
+
+    const map = new Map<
+      string,
+      { id: string; name: string; stock: Prisma.Decimal; version: number }
+    >();
+
+    for (const row of rows) {
+      map.set(row.id, {
+        id: row.id,
+        name: row.name,
+        stock: new Prisma.Decimal(row.stock),
+        version: row.version,
+      });
+    }
+
+    return map;
+  }
+
+  /**
+   * Phân loại lỗi nghiệp vụ / validation: tuyệt đối không được retry.
+   */
+  private isNonRetryableError(error: unknown): boolean {
+    return (
+      error instanceof UserNotFoundException ||
+      error instanceof InsufficientIngredientStockException ||
+      error instanceof InvalidVoucherException ||
+      error instanceof OrderNotFoundException ||
+      error instanceof InvalidOrderTransitionException ||
+      error instanceof OrderActionForbiddenException ||
+      error instanceof OrderCancellationNotAllowedException ||
+      error instanceof ReservationAlreadyConsumedException ||
+      error instanceof ReservationNotFoundException ||
+      error instanceof OrderStateConflictException ||
+      error instanceof ReservationStateConflictException ||
+      error instanceof ForbiddenException ||
+      error instanceof BadRequestException ||
+      error instanceof NotFoundException
+    );
+  }
+
+  /**
+   * Phân loại lỗi xung đột concurrency có thể retry.
+   */
+  private isRetryableConcurrencyError(error: unknown): boolean {
+    if (error instanceof ConcurrentStockConflictException) {
+      return true;
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      // P2034: Transaction failed due to a write conflict or a deadlock
+      // P2002: Unique constraint failed (trường hợp trùng mã orderNumber hiếm gặp)
+      return error.code === 'P2034' || error.code === 'P2002';
+    }
+
+    // PostgreSQL error codes: 40001 (serialization_failure), 40P01 (deadlock_detected)
+    const err = error as { code?: string };
+    if (err && (err.code === '40001' || err.code === '40P01')) {
+      return true;
+    }
+
+    return false;
+  }
+}
