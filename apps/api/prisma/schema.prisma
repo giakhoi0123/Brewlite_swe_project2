@@ -29,6 +29,13 @@ enum DiscountType {
   FIXED_AMOUNT
 }
 
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
 model User {
   id             String   @id @default(uuid()) @db.Uuid
   email          String   @unique @db.VarChar(255)
@@ -42,6 +49,7 @@ model User {
 
   passwordResetTokens PasswordResetToken[]
   loyaltyLogs         LoyaltyLog[]
+  orders              Order[]
 
   @@map("users")
 }
@@ -69,8 +77,9 @@ model Product {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  options   ProductOption[]
-  inventory Inventory?
+  options    ProductOption[]
+  inventory  Inventory?
+  orderItems OrderItem[]
 
   @@map("products")
 }
@@ -145,6 +154,8 @@ model Promotion {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
+  orders Order[]
+
   @@map("promotions")
 }
 
@@ -159,4 +170,43 @@ model LoyaltyLog {
 
   @@index([userId])
   @@map("loyalty_logs")
+}
+
+model Order {
+  id             String      @id @default(uuid()) @db.Uuid
+  userId         String      @map("user_id") @db.Uuid
+  promotionId    String?     @map("promotion_id") @db.Uuid
+  totalAmount    Decimal     @map("total_amount") @db.Decimal(10, 2)
+  discountAmount Decimal     @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  finalAmount    Decimal     @map("final_amount") @db.Decimal(10, 2)
+  pointsEarned   Int         @default(0) @map("points_earned")
+  pointsRedeemed Int         @default(0) @map("points_redeemed")
+  status         OrderStatus @default(PENDING)
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promotion Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  items     OrderItem[]
+
+  @@index([userId])
+  @@index([promotionId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  orderId     String   @map("order_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  productName String   @map("product_name") @db.VarChar(255)
+  quantity    Int
+  unitPrice   Decimal  @map("unit_price") @db.Decimal(10, 2)
+  subtotal    Decimal  @db.Decimal(10, 2)
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
 }
