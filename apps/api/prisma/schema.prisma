@@ -29,6 +29,22 @@ enum DiscountType {
   FIXED_AMOUNT
 }
 
+enum ReservationStatus {
+  ACTIVE
+  CONSUMED
+  RELEASED
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PAYMENT_FAILED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
 model User {
   id             String   @id @default(uuid()) @db.Uuid
   email          String   @unique @db.VarChar(255)
@@ -42,6 +58,7 @@ model User {
 
   passwordResetTokens PasswordResetToken[]
   loyaltyLogs         LoyaltyLog[]
+  orders              Order[]
 
   @@map("users")
 }
@@ -69,8 +86,9 @@ model Product {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  options   ProductOption[]
-  inventory Inventory?
+  options    ProductOption[]
+  inventory  Inventory?
+  orderItems OrderItem[]
 
   @@map("products")
 }
@@ -83,8 +101,9 @@ model ProductOption {
   extraPrice Decimal    @default(0) @map("extra_price") @db.Decimal(10, 2)
   createdAt  DateTime   @default(now()) @map("created_at")
 
-  product Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  recipes OptionRecipe[]
+  product          Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  recipes          OptionRecipe[]
+  orderItemOptions OrderItemOption[]
 
   @@index([productId])
   @@map("product_options")
@@ -111,7 +130,8 @@ model Ingredient {
   createdAt DateTime       @default(now()) @map("created_at")
   updatedAt DateTime       @updatedAt @map("updated_at")
 
-  recipes OptionRecipe[]
+  recipes          OptionRecipe[]
+  reservationLines OrderReservationLine[]
 
   @@map("ingredients")
 }
@@ -145,6 +165,8 @@ model Promotion {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
+  orders Order[]
+
   @@map("promotions")
 }
 
@@ -159,4 +181,116 @@ model LoyaltyLog {
 
   @@index([userId])
   @@map("loyalty_logs")
+}
+
+model Order {
+  id          String      @id @default(uuid()) @db.Uuid
+  orderNumber String      @unique @map("order_number") @db.VarChar(50)
+  userId      String      @map("user_id") @db.Uuid
+  status      OrderStatus @default(PENDING)
+  version     Int         @default(1)
+  subtotal    Decimal     @db.Decimal(10, 2)
+  discount    Decimal     @default(0) @db.Decimal(10, 2)
+  total       Decimal     @db.Decimal(10, 2)
+  voucherCode String?     @map("voucher_code") @db.VarChar(50)
+  promotionId String?     @map("promotion_id") @db.Uuid
+  notes       String?     @db.Text
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  user          User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  promotion     Promotion?                 @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  items         OrderItem[]
+  reservation   OrderInventoryReservation?
+  statusHistory OrderStatusHistory[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  orderId             String   @map("order_id") @db.Uuid
+  productId           String   @map("product_id") @db.Uuid
+  productNameSnapshot String   @map("product_name_snapshot") @db.VarChar(255)
+  unitPriceSnapshot   Decimal  @map("unit_price_snapshot") @db.Decimal(10, 2)
+  quantity            Int
+  subtotal            Decimal  @db.Decimal(10, 2)
+  optionsSnapshot     Json?    @map("options_snapshot")
+  notes               String?  @db.Text
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  order            Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product          Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  orderItemOptions OrderItemOption[]
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+model OrderItemOption {
+  id                 String     @id @default(uuid()) @db.Uuid
+  orderItemId        String     @map("order_item_id") @db.Uuid
+  productOptionId    String     @map("product_option_id") @db.Uuid
+  optionNameSnapshot String     @map("option_name_snapshot") @db.VarChar(100)
+  optionType         OptionType @map("option_type")
+  extraPriceSnapshot Decimal    @map("extra_price_snapshot") @db.Decimal(10, 2)
+  createdAt          DateTime   @default(now()) @map("created_at")
+
+  orderItem     OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  productOption ProductOption @relation(fields: [productOptionId], references: [id], onDelete: Restrict)
+
+  @@unique([orderItemId, productOptionId])
+  @@index([orderItemId])
+  @@index([productOptionId])
+  @@map("order_item_options")
+}
+
+model OrderInventoryReservation {
+  id         String            @id @default(uuid()) @db.Uuid
+  orderId    String            @unique @map("order_id") @db.Uuid
+  status     ReservationStatus @default(ACTIVE)
+  version    Int               @default(1)
+  createdAt  DateTime          @default(now()) @map("created_at")
+  consumedAt DateTime?         @map("consumed_at")
+  releasedAt DateTime?         @map("released_at")
+  updatedAt  DateTime          @updatedAt @map("updated_at")
+
+  order Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lines OrderReservationLine[]
+
+  @@index([status])
+  @@map("order_inventory_reservations")
+}
+
+model OrderReservationLine {
+  id            String  @id @default(uuid()) @db.Uuid
+  reservationId String  @map("reservation_id") @db.Uuid
+  ingredientId  String  @map("ingredient_id") @db.Uuid
+  amount        Decimal @db.Decimal(12, 3)
+
+  reservation OrderInventoryReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  ingredient  Ingredient                @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  @@unique([reservationId, ingredientId])
+  @@index([ingredientId])
+  @@map("order_reservation_lines")
+}
+
+model OrderStatusHistory {
+  id         String       @id @default(uuid()) @db.Uuid
+  orderId    String       @map("order_id") @db.Uuid
+  fromStatus OrderStatus? @map("from_status")
+  toStatus   OrderStatus  @map("to_status")
+  actorId    String?      @map("actor_id") @db.Uuid
+  reason     String?      @db.VarChar(255)
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
 }
