@@ -14,7 +14,18 @@ export class OrdersService {
 
   // Quy tắc Order State Machine
   private readonly validTransitions: Record<OrderStatus, OrderStatus[]> = {
-    [OrderStatus.PENDING]: [OrderStatus.PROCESSING, OrderStatus.CANCELLED],
+    [OrderStatus.PENDING]: [
+      OrderStatus.PAID,
+      OrderStatus.PAYMENT_FAILED,
+      OrderStatus.PROCESSING,
+      OrderStatus.CANCELLED,
+    ],
+    [OrderStatus.PAYMENT_FAILED]: [
+      OrderStatus.PENDING,
+      OrderStatus.PAID,
+      OrderStatus.CANCELLED,
+    ],
+    [OrderStatus.PAID]: [OrderStatus.PROCESSING, OrderStatus.CANCELLED],
     [OrderStatus.PROCESSING]: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
     [OrderStatus.COMPLETED]: [],
     [OrderStatus.CANCELLED]: [],

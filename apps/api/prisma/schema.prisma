@@ -31,9 +31,30 @@ enum DiscountType {
 
 enum OrderStatus {
   PENDING
+  PAID
+  PAYMENT_FAILED
   PROCESSING
   COMPLETED
   CANCELLED
+}
+
+enum PaymentMethod {
+  WALLET
+  CARD
+}
+
+enum PaymentStatus {
+  PROCESSING
+  PAID
+  FAILED
+  UNKNOWN
+}
+
+enum PaymentResultCode {
+  PAYMENT_PAID
+  PAYMENT_DECLINED
+  PAYMENT_PROCESSING
+  PAYMENT_STATUS_UNKNOWN
 }
 
 model User {
@@ -92,7 +113,7 @@ model ProductOption {
   extraPrice Decimal    @default(0) @map("extra_price") @db.Decimal(10, 2)
   createdAt  DateTime   @default(now()) @map("created_at")
 
-  product Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
   recipes OptionRecipe[]
 
   @@index([productId])
@@ -185,9 +206,10 @@ model Order {
   createdAt      DateTime    @default(now()) @map("created_at")
   updatedAt      DateTime    @updatedAt @map("updated_at")
 
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  promotion Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promotion Promotion?  @relation(fields: [promotionId], references: [id], onDelete: SetNull)
   items     OrderItem[]
+  payments  Payment[]
 
   @@index([userId])
   @@index([promotionId])
@@ -195,13 +217,13 @@ model Order {
 }
 
 model OrderItem {
-  id          String   @id @default(uuid()) @db.Uuid
-  orderId     String   @map("order_id") @db.Uuid
-  productId   String   @map("product_id") @db.Uuid
-  productName String   @map("product_name") @db.VarChar(255)
+  id          String  @id @default(uuid()) @db.Uuid
+  orderId     String  @map("order_id") @db.Uuid
+  productId   String  @map("product_id") @db.Uuid
+  productName String  @map("product_name") @db.VarChar(255)
   quantity    Int
-  unitPrice   Decimal  @map("unit_price") @db.Decimal(10, 2)
-  subtotal    Decimal  @db.Decimal(10, 2)
+  unitPrice   Decimal @map("unit_price") @db.Decimal(10, 2)
+  subtotal    Decimal @db.Decimal(10, 2)
 
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
@@ -209,4 +231,25 @@ model OrderItem {
   @@index([orderId])
   @@index([productId])
   @@map("order_items")
+}
+
+model Payment {
+  id                 String            @id @default(uuid()) @db.Uuid
+  orderId            String            @map("order_id") @db.Uuid
+  idempotencyKey     String            @unique @map("idempotency_key") @db.Uuid
+  requestFingerprint String            @map("request_fingerprint") @db.Char(64)
+  method             PaymentMethod
+  amount             Decimal           @db.Decimal(10, 2)
+  status             PaymentStatus     @default(PROCESSING)
+  resultCode         PaymentResultCode @default(PAYMENT_PROCESSING) @map("result_code")
+  retryable          Boolean           @default(false)
+  httpStatus         Int               @default(202) @map("http_status")
+  processedAt        DateTime?         @map("processed_at")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@map("payments")
 }
