@@ -90,7 +90,9 @@ it('chi tiết, phụ thu, UUID và đổi size trong giỏ đều dùng dữ li
   await userEvent.clear(screen.getByRole('spinbutton'));
   await userEvent.type(screen.getByRole('spinbutton'), '9');
   expect(screen.getByRole('spinbutton')).toHaveValue(3);
-  await userEvent.click(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' }));
+  const addButton = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
+  await waitFor(() => expect(addButton).toBeEnabled());
+  await userEvent.click(addButton);
   await waitFor(() => expect(JSON.parse(screen.getByTestId('live-cart').textContent!)[0]).toMatchObject({
     productId: product.id, unitPrice: 41000, quantity: 3,
     customization: { size: 'size-l-uuid', toppingIds: ['topping-uuid'] },
