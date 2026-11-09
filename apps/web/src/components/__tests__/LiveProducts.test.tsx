@@ -77,16 +77,19 @@ it('trang chi tiết tính đúng giá theo size/topping và thêm vào giỏ', 
   await userEvent.clear(screen.getByRole('spinbutton'));
   await userEvent.type(screen.getByRole('spinbutton'), '9');
   expect(screen.getByRole('spinbutton')).toHaveValue(3);
-  await userEvent.click(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' }));
+  const addToCartButton = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
+  await waitFor(() => expect(addToCartButton).toBeEnabled());
+  await userEvent.click(addToCartButton);
   await waitFor(() => expect(JSON.parse(screen.getByTestId('live-cart').textContent!)[0]).toMatchObject({
     productId: product.id, unitPrice: 41000, quantity: 3,
     customization: { size: 'size-l-uuid', toppingIds: ['topping-uuid'] },
   }));
+  expect(await screen.findByText(/Đã thêm 3x Cà phê từ API vào giỏ/)).toBeInTheDocument();
   view.unmount();
   setup(<CartView />);
   expect(await screen.findByRole('combobox', { name: `Chọn size cho ${product.name}` })).toHaveValue('size-l-uuid');
   await userEvent.selectOptions(screen.getByRole('combobox', { name: `Chọn size cho ${product.name}` }), 'size-m-uuid');
-  expect(JSON.parse(screen.getByTestId('live-cart').textContent!)[0].unitPrice).toBe(34000);
+  await waitFor(() => expect(JSON.parse(screen.getByTestId('live-cart').textContent!)[0].unitPrice).toBe(34000));
 });
 
 it('chi tiết hết tồn kho vô hiệu hóa đặt món', async () => {
