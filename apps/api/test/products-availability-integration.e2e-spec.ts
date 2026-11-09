@@ -1,20 +1,19 @@
 import { randomUUID } from 'crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { OptionType } from '@prisma/client';
+import { IngredientUnit, OptionType } from '@prisma/client';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ProductResponseDto } from '../src/products/dto/product-response.dto';
 import { ProductDetailResponseDto } from '../src/products/dto/product-detail-response.dto';
 
-type Stock = { quantity: number; reserved: number };
-
-describe('Products availability PostgreSQL integration', () => {
+describe('Products recipe availability PostgreSQL integration', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let fixtureId: string;
   let fixtureName: string;
+  let fixtureIngredientId: string;
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -28,20 +27,34 @@ describe('Products availability PostgreSQL integration', () => {
   beforeEach(() => {
     fixtureId = randomUUID();
     fixtureName = `Task51 Availability ${fixtureId}`;
+    fixtureIngredientId = randomUUID();
   });
 
   afterEach(async () => {
-    // Cascades remove only this test's options and inventory, never shared seeds.
-    if (prisma && fixtureId) {
-      await prisma.product.deleteMany({ where: { id: fixtureId } });
-    }
+    if (!prisma) return;
+    await prisma.product.deleteMany({ where: { id: fixtureId } });
+    await prisma.ingredient.deleteMany({ where: { id: fixtureIngredientId } });
   });
 
   afterAll(async () => {
     await app?.close();
   });
 
-  async function createFixture(isAvailable: boolean, inventory: Stock | null) {
+  async function createFixture(isAvailable: boolean, ingredientStock: number | null) {
+    const regularId = randomUUID();
+    const largeId = randomUUID();
+
+    if (ingredientStock !== null) {
+      await prisma.ingredient.create({
+        data: {
+          id: fixtureIngredientId,
+          name: `Task51 ingredient ${fixtureIngredientId}`,
+          unit: IngredientUnit.ML,
+          stock: ingredientStock,
+        },
+      });
+    }
+
     await prisma.product.create({
       data: {
         id: fixtureId,
@@ -49,16 +62,24 @@ describe('Products availability PostgreSQL integration', () => {
         basePrice: 25000,
         imageUrl: 'https://example.com/task51-coffee.jpg',
         isAvailable,
-        ...(inventory ? { inventory: { create: inventory } } : {}),
         options: {
           create: [
-            { type: OptionType.TOPPING, name: 'Coffee jelly', extraPrice: 5000 },
-            { type: OptionType.SIZE, name: 'Large', extraPrice: 6000 },
-            { type: OptionType.SIZE, name: 'Regular', extraPrice: 0 },
+            { id: randomUUID(), type: OptionType.TOPPING, name: 'Coffee jelly', extraPrice: 5000 },
+            { id: largeId, type: OptionType.SIZE, name: 'Large', extraPrice: 6000 },
+            { id: regularId, type: OptionType.SIZE, name: 'Regular', extraPrice: 0 },
           ],
         },
       },
     });
+
+    if (ingredientStock !== null) {
+      await prisma.optionRecipe.createMany({
+        data: [
+          { productOptionId: regularId, ingredientId: fixtureIngredientId, amount: 2 },
+          { productOptionId: largeId, ingredientId: fixtureIngredientId, amount: 4 },
+        ],
+      });
+    }
   }
 
   async function readAllEndpoints(isAvailable: boolean, canOrder: boolean) {
@@ -74,23 +95,25 @@ describe('Products availability PostgreSQL integration', () => {
     for (const product of [listed, search.body[0], detail.body]) {
       expect(product).toMatchObject({ id: fixtureId, isAvailable, canOrder });
     }
-    // The list response keeps the catalog shape and does not expose inventory.
     expect(listed).not.toHaveProperty('inventory');
     expect(listed).not.toHaveProperty('options');
     return detail.body as ProductDetailResponseDto;
   }
 
   it.each([
-    { label: 'available stock', isAvailable: true, inventory: { quantity: 8, reserved: 3 }, canOrder: true, stock: 5 },
-    { label: 'zero stock', isAvailable: true, inventory: { quantity: 0, reserved: 0 }, canOrder: false, stock: 0 },
-    { label: 'fully reserved stock', isAvailable: true, inventory: { quantity: 8, reserved: 8 }, canOrder: false, stock: 0 },
-    { label: 'sale disabled', isAvailable: false, inventory: { quantity: 8, reserved: 0 }, canOrder: false, stock: 8 },
-    { label: 'missing inventory', isAvailable: true, inventory: null, canOrder: false, stock: null },
-  ])('returns consistent state for $label', async ({ isAvailable, inventory, canOrder, stock }) => {
-    await createFixture(isAvailable, inventory);
+    { label: 'available ingredients', isAvailable: true, stock: 8, canOrder: true, capacity: 4 },
+    { label: 'zero ingredients', isAvailable: true, stock: 0, canOrder: false, capacity: 0 },
+    { label: 'sale disabled', isAvailable: false, stock: 8, canOrder: false, capacity: 4 },
+    { label: 'missing recipes', isAvailable: true, stock: null, canOrder: false, capacity: 0 },
+  ])('returns consistent state for $label', async ({ isAvailable, stock, canOrder, capacity }) => {
+    await createFixture(isAvailable, stock);
     const detail = await readAllEndpoints(isAvailable, canOrder);
 
-    expect(detail.inventory).toEqual(inventory ? { ...inventory, availableStock: stock } : null);
+    expect(detail.inventory).toEqual({
+      quantity: capacity,
+      reserved: 0,
+      availableStock: capacity,
+    });
     expect(detail.basePrice).toBe(25000);
     expect(detail.imageUrl).toBe('https://example.com/task51-coffee.jpg');
     expect(detail.options.map(({ type, name, extraPrice }) => ({ type, name, extraPrice })))
@@ -101,17 +124,17 @@ describe('Products availability PostgreSQL integration', () => {
       ]);
   });
 
-  it('reflects release of one reserved unit on the next list, search and detail read', async () => {
-    await createFixture(true, { quantity: 8, reserved: 8 });
+  it('reflects an ingredient restock on the next list, search and detail read', async () => {
+    await createFixture(true, 0);
     const before = await readAllEndpoints(true, false);
-    expect(before.inventory.availableStock).toBe(0);
+    expect(before.inventory?.availableStock).toBe(0);
 
-    await prisma.inventory.update({
-      where: { productId: fixtureId },
-      data: { reserved: 7 },
+    await prisma.ingredient.update({
+      where: { id: fixtureIngredientId },
+      data: { stock: 2 },
     });
 
     const after = await readAllEndpoints(true, true);
-    expect(after.inventory).toEqual({ quantity: 8, reserved: 7, availableStock: 1 });
+    expect(after.inventory).toEqual({ quantity: 1, reserved: 0, availableStock: 1 });
   });
 });

@@ -29,12 +29,12 @@ npm.cmd run build
 Kết quả:
 
 - Prisma: 7/7 migrations apply thành công; seed tạo lại dữ liệu thành công.
-- Unit/service: 11 suites, 57 tests passed.
-- PostgreSQL integration: 4 suites, 18 tests passed.
-- API E2E chạy tuần tự: 6 suites, 34 tests passed.
+- Unit/service: 12 suites, 53 tests passed.
+- PostgreSQL integration: 4 suites, 17 tests passed.
+- API E2E chạy tuần tự: 6 suites, 33 tests passed.
 - ESLint: passed.
 - Nest build: passed.
-- Checkout UI test: passed; Next.js production build: passed.
+- Frontend: 16 suites, 92 tests passed; typecheck và Next.js production build passed.
 
 Test trọng tâm nằm tại:
 

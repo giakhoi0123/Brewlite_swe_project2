@@ -129,11 +129,15 @@ describe('Products API (e2e)', () => {
           },
         ]),
         inventory: {
-          quantity: 150,
+          quantity: expect.any(Number),
           reserved: 0,
-          availableStock: 150,
+          availableStock: expect.any(Number),
         },
       });
+      expect(response.body.inventory.quantity).toBeGreaterThan(0);
+      expect(response.body.inventory.availableStock).toBe(
+        response.body.inventory.quantity,
+      );
       expect(response.body.options).toHaveLength(3);
     });
 

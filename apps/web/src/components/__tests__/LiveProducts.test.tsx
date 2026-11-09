@@ -7,13 +7,14 @@ import { CartProvider, useCart } from '../cart/CartProvider';
 import { CartView } from '../cart/CartView';
 import { FavoritesProvider } from '../favorites/FavoritesProvider';
 import { ToastProvider } from '../ui/ToastProvider';
-import { fetchProductsFromApi, fetchProductDetailFromApi, ProductApiError } from '../../services/product-api';
+import { checkCartAvailability, fetchProductsFromApi, fetchProductDetailFromApi, ProductApiError } from '../../services/product-api';
 import { ProductDetail } from '../../types/product';
 
 jest.mock('../../services/product-api', () => ({
   ...jest.requireActual('../../services/product-api'),
   fetchProductsFromApi: jest.fn(),
   fetchProductDetailFromApi: jest.fn(),
+  checkCartAvailability: jest.fn(),
 }));
 jest.mock('next/navigation', () => ({ useRouter: () => ({ push: jest.fn() }) }));
 
@@ -35,7 +36,18 @@ function CartProbe() {
 function setup(ui: React.ReactNode) {
   return render(<ToastProvider><CartProvider><FavoritesProvider>{ui}<CartProbe /></FavoritesProvider></CartProvider></ToastProvider>);
 }
-beforeEach(() => { jest.clearAllMocks(); localStorage.clear(); });
+beforeEach(() => {
+  jest.clearAllMocks();
+  localStorage.clear();
+  (checkCartAvailability as jest.Mock).mockImplementation(async (items: unknown[]) => ({
+    canOrder: true,
+    items: items.map((_, index) => ({
+      index,
+      availableQuantity: 3,
+      canOrder: true,
+    })),
+  }));
+});
 
 it('trang thực đơn dùng dữ liệu API và link UUID, tìm không dấu và không hiển thị đánh giá mẫu', async () => {
   (fetchProductsFromApi as jest.Mock).mockResolvedValue([product]);
@@ -91,6 +103,10 @@ it('chi tiết, phụ thu, UUID và đổi size trong giỏ đều dùng dữ li
 });
 
 it('chi tiết hết tồn kho vô hiệu hóa đặt món', async () => {
+  (checkCartAvailability as jest.Mock).mockResolvedValue({
+    canOrder: false,
+    items: [{ index: 0, availableQuantity: 0, canOrder: false }],
+  });
   (fetchProductDetailFromApi as jest.Mock).mockResolvedValue({ ...product, inventory: null, canOrder: false });
   setup(<ProductPage params={{ slug: product.id }} />);
   expect(await screen.findByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();

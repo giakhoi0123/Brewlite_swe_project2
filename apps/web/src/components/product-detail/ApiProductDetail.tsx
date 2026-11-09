@@ -110,7 +110,7 @@ function ProductContent({ product }: { product: ProductDetail }) {
       </label>
       <label className="flex items-center justify-between gap-3">Số lượng
         <input aria-label="Số lượng" type="number" min={1} max={Math.max(1, Math.min(99, stock))} value={quantity}
-          onChange={(e) => setQuantity(Math.max(1, Math.min(99, Math.floor(Number(e.target.value) || 1))))}
+          onChange={(e) => setQuantity(Math.max(1, Math.min(99, stock, Math.floor(Number(e.target.value) || 1))))}
           className="w-24 rounded-full px-4 py-2 bg-surface-container" />
       </label>
       {!checkingStock && !stockError && quantity > stock && <p role="alert" className="text-error">Không đủ số lượng.</p>}

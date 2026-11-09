@@ -61,6 +61,8 @@ describe('CheckoutPage', () => {
 
     (useCart as jest.Mock).mockReturnValue({
       isReady: true,
+      isChecking: false,
+      canCheckout: true,
       items: [mockCartItem],
       totalQuantity: 2,
       totalPrice: 50000,
@@ -97,6 +99,8 @@ describe('CheckoutPage', () => {
   it('renders empty cart message when cart is empty', () => {
     (useCart as jest.Mock).mockReturnValue({
       isReady: true,
+      isChecking: false,
+      canCheckout: false,
       items: [],
       totalQuantity: 0,
       totalPrice: 0,

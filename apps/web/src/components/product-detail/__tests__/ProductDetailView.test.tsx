@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CartProvider } from '../../cart/CartProvider';
 import { FavoritesProvider } from '../../favorites/FavoritesProvider';
@@ -6,11 +6,17 @@ import { ToastProvider } from '../../ui/ToastProvider';
 import { ProductDetailView } from '../ProductDetailView';
 import { getProductBySlug, MOCK_PRODUCTS } from '../../../data/menu-products';
 import { CartProbe } from '../../../test-utils/CartProbe';
+import { checkCartAvailability } from '../../../services/product-api';
 
 const push = jest.fn();
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push }),
 }));
+jest.mock('../../../services/product-api', () => ({
+  checkCartAvailability: jest.fn(),
+}));
+
+const checkAvailability = checkCartAvailability as jest.Mock;
 
 function renderDetail(slug = 'ca-phe-sua-da-sai-gon') {
   const product = getProductBySlug(slug)!;
@@ -31,6 +37,15 @@ describe('ProductDetailView', () => {
   beforeEach(() => {
     window.localStorage.clear();
     push.mockClear();
+    checkAvailability.mockReset();
+    checkAvailability.mockImplementation(async (items: unknown[]) => ({
+      canOrder: true,
+      items: items.map((_, index) => ({
+        index,
+        availableQuantity: 99,
+        canOrder: true,
+      })),
+    }));
   });
 
   it('hiển thị tên, giá khuyến mãi và breadcrumb danh mục', () => {
@@ -66,7 +81,7 @@ describe('ProductDetailView', () => {
     renderDetail();
     await userEvent.click(screen.getByRole('button', { name: /MUA NGAY/ }));
     expect(screen.getByTestId('cart-probe')).toHaveTextContent('1 ly · 25.000');
-    expect(push).toHaveBeenCalledWith('/gio-hang');
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/gio-hang'));
   });
 
   it('thêm nhanh món gợi ý', async () => {

@@ -41,7 +41,12 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
   it('maps the persisted seed list to the frontend Product contract', async () => {
     const persistedProducts = await prisma.product.findMany({
       orderBy: { name: 'asc' },
-      include: { inventory: true },
+      include: {
+        inventory: true,
+        options: {
+          include: { recipes: { include: { ingredient: true } } },
+        },
+      },
     });
 
     const listRes = await request(app.getHttpServer())
@@ -54,6 +59,17 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
       .toEqual(persistedProducts.map(product => product.id));
 
     for (const persistedProduct of persistedProducts) {
+      const sizes = persistedProduct.options.filter(option => option.type === 'SIZE');
+      const capacity = Math.max(
+        0,
+        ...sizes.map(size => size.recipes.length
+          ? Math.min(...size.recipes.map(recipe =>
+              recipe.amount.gt(0)
+                ? recipe.ingredient.stock.div(recipe.amount).floor().toNumber()
+                : 0,
+            ))
+          : 0),
+      );
       const apiProduct = listRes.body.find(
         (product: { id: string }) => product.id === persistedProduct.id,
       );
@@ -64,9 +80,7 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
         basePrice: Number(persistedProduct.basePrice),
         imageUrl: persistedProduct.imageUrl,
         isAvailable: persistedProduct.isAvailable,
-        canOrder: persistedProduct.isAvailable &&
-          !!persistedProduct.inventory &&
-          persistedProduct.inventory.quantity > persistedProduct.inventory.reserved,
+        canOrder: persistedProduct.isAvailable && capacity > 0,
         createdAt: persistedProduct.createdAt.toISOString(),
       });
     }
@@ -76,10 +90,27 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
     const productId = 'a0000000-0000-0000-0000-000000000008';
     const persistedProduct = await prisma.product.findUnique({
       where: { id: productId },
-      include: { options: true, inventory: true },
+      include: {
+        options: {
+          include: { recipes: { include: { ingredient: true } } },
+        },
+        inventory: true,
+      },
     });
 
     expect(persistedProduct).not.toBeNull();
+
+    const sizes = persistedProduct!.options.filter(option => option.type === 'SIZE');
+    const capacity = Math.max(
+      0,
+      ...sizes.map(size => size.recipes.length
+        ? Math.min(...size.recipes.map(recipe =>
+            recipe.amount.gt(0)
+              ? recipe.ingredient.stock.div(recipe.amount).floor().toNumber()
+              : 0,
+          ))
+        : 0),
+    );
 
     const detailRes = await request(app.getHttpServer())
       .get(`/api/products/${productId}`)
@@ -93,11 +124,9 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
       isAvailable: persistedProduct!.isAvailable,
       createdAt: persistedProduct!.createdAt.toISOString(),
       inventory: {
-        quantity: persistedProduct!.inventory!.quantity,
-        reserved: persistedProduct!.inventory!.reserved,
-        availableStock:
-          persistedProduct!.inventory!.quantity -
-          persistedProduct!.inventory!.reserved,
+        quantity: capacity,
+        reserved: 0,
+        availableStock: capacity,
       },
     });
     expect(Array.isArray(detailRes.body.options)).toBe(true);

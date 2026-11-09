@@ -2,9 +2,21 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DEFAULT_CUSTOMIZATION } from '../../../data/menu-options';
 import { addCartItem } from '../../../lib/cart';
+import { checkCartAvailability } from '../../../services/product-api';
 import { ToastProvider } from '../../ui/ToastProvider';
 import { CartProvider } from '../CartProvider';
 import { CartView } from '../CartView';
+
+const push = jest.fn();
+const mockFetch = jest.fn();
+const checkAvailability = checkCartAvailability as jest.Mock;
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push }),
+}));
+jest.mock('../../../services/product-api', () => ({
+  checkCartAvailability: jest.fn(),
+}));
 
 function seedCart() {
   let items = addCartItem([], {
@@ -37,7 +49,33 @@ function renderCart() {
 }
 
 describe('CartView', () => {
-  beforeEach(() => window.localStorage.clear());
+  beforeEach(() => {
+    window.localStorage.clear();
+    push.mockClear();
+    checkAvailability.mockReset();
+    checkAvailability.mockImplementation(async (items: unknown[]) => ({
+      canOrder: true,
+      items: items.map((_, index) => ({
+        index,
+        availableQuantity: 99,
+        canOrder: true,
+      })),
+    }));
+    mockFetch.mockReset();
+    mockFetch.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const code = JSON.parse(String(init?.body)).code;
+      const valid = code === 'COFFEE10';
+      return {
+        ok: valid,
+        status: valid ? 200 : 400,
+        json: async () =>
+          valid
+            ? { code: 'COFFEE10', discountAmount: 10000 }
+            : { message: 'Mã giảm giá không hợp lệ hoặc đã hết hạn.' },
+      } as Response;
+    });
+    global.fetch = mockFetch as unknown as typeof fetch;
+  });
 
   it('hiển thị trạng thái trống khi chưa có món', async () => {
     renderCart();

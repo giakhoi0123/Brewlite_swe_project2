@@ -6,9 +6,7 @@ export type ProductWithInventory = Prisma.ProductGetPayload<{
   include: { inventory: { select: { quantity: true; reserved: true } }; options: { include: { recipes: { include: { ingredient: true } } } } };
 }>;
 
-export type ProductWithDetails = ProductWithInventory & {
-
-};
+export type ProductWithDetails = ProductWithInventory;
 
 @Injectable()
 export class ProductsRepository {
