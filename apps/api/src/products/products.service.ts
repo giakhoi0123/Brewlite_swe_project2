@@ -32,7 +32,7 @@ export class ProductsService {
       basePrice: Number(product.basePrice),
       imageUrl: product.imageUrl,
       isAvailable: product.isAvailable,
-      canOrder: product.isAvailable && this.availableStock(product.inventory) > 0,
+      canOrder: product.isAvailable && this.recipeCapacity(product) > 0,
       createdAt: product.createdAt.toISOString(),
     };
   }
@@ -46,17 +46,17 @@ export class ProductsService {
         name: opt.name,
         extraPrice: Number(opt.extraPrice),
       })),
-      inventory: product.inventory
-        ? {
-            quantity: product.inventory.quantity,
-            reserved: product.inventory.reserved,
-            availableStock: this.availableStock(product.inventory),
-          }
-        : null,
+      inventory: {
+            quantity: this.recipeCapacity(product),
+            reserved: 0,
+            availableStock: this.recipeCapacity(product),
+          },
     };
   }
 
-  private availableStock(inventory: ProductWithInventory['inventory']): number {
-    return inventory ? Math.max(0, inventory.quantity - inventory.reserved) : 0;
+  private recipeCapacity(product: ProductWithInventory): number {
+    const sizes = (product.options ?? []).filter(o => o.type === 'SIZE');
+    return Math.max(0, ...sizes.map(size => size.recipes.length ? Math.min(...size.recipes.map(r => r.amount.gt(0) ? Math.max(0, r.ingredient.stock.div(r.amount).floor().toNumber()) : 0)) : 0));
   }
+
 }

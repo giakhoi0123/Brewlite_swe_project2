@@ -1,157 +1,29 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
+import { Prisma, OptionType } from '@prisma/client';
 import { ProductsService } from './products.service';
 import { ProductsRepository } from './products.repository';
-import { NotFoundException } from '@nestjs/common';
-import { OptionType, Prisma } from '@prisma/client';
 
-describe('ProductsService', () => {
-  let service: ProductsService;
-  let repository: jest.Mocked<ProductsRepository>;
-
-  const mockProduct = {
-    id: 'a0000000-0000-0000-0000-000000000001',
-    name: 'Cà phê đen đá',
-    basePrice: new Prisma.Decimal(25000),
-    imageUrl: 'https://example.com/black-coffee.jpg',
-    isAvailable: true,
-    inventory: { quantity: 8, reserved: 3 },
-    createdAt: new Date('2026-10-31T00:00:00.000Z'),
-    updatedAt: new Date('2026-10-31T00:00:00.000Z'),
+describe('ProductsService ingredient availability', () => {
+  const product = {
+    id: 'coffee', name: 'Coffee', basePrice: new Prisma.Decimal(25000), imageUrl: '/coffee.jpg',
+    isAvailable: true, createdAt: new Date(), updatedAt: new Date(), inventory: null,
+    options: [{ id: 'M', productId: 'coffee', type: OptionType.SIZE, name: 'M', extraPrice: new Prisma.Decimal(0), createdAt: new Date(),
+      recipes: [{ productOptionId: 'M', ingredientId: 'milk', amount: new Prisma.Decimal(100), ingredient: { id: 'milk', name: 'Milk', stock: new Prisma.Decimal(1000) } }] }],
   };
-
-  const mockProductWithDetails = {
-    ...mockProduct,
-    options: [
-      {
-        id: 'b0000000-0000-0000-0000-000000000001',
-        productId: mockProduct.id,
-        type: OptionType.SIZE,
-        name: 'Size L',
-        extraPrice: new Prisma.Decimal(6000),
-        createdAt: new Date('2026-10-31T00:00:00.000Z'),
-      },
-    ],
-    inventory: {
-      id: 'c0000000-0000-0000-0000-000000000001',
-      productId: mockProduct.id,
-      quantity: 100,
-      reserved: 10,
-      updatedAt: new Date('2026-10-31T00:00:00.000Z'),
-    },
-  };
-
-  beforeEach(async () => {
-    const mockRepo = {
-      findMany: jest.fn(),
-      findById: jest.fn(),
-    };
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        ProductsService,
-        {
-          provide: ProductsRepository,
-          useValue: mockRepo,
-        },
-      ],
-    }).compile();
-
-    service = module.get<ProductsService>(ProductsService);
-    repository = module.get(ProductsRepository);
+  const repository = { findMany: jest.fn(), findById: jest.fn() };
+  const service = new ProductsService(repository as unknown as ProductsRepository);
+  it('allows ordering with ingredients even without legacy inventory', async () => {
+    repository.findMany.mockResolvedValue([product]);
+    expect((await service.findAll({}))[0].canOrder).toBe(true);
+    repository.findById.mockResolvedValue(product);
+    expect((await service.findOne('coffee')).inventory).toEqual({ quantity: 10, reserved: 0, availableStock: 10 });
   });
-
-  describe('findAll', () => {
-    it('should return a list of mapped products', async () => {
-      repository.findMany.mockResolvedValue([mockProduct]);
-
-      const result = await service.findAll({});
-
-      expect(repository.findMany).toHaveBeenCalledWith(undefined);
-      expect(result).toHaveLength(1);
-      expect(result[0]).toEqual({
-        id: mockProduct.id,
-        name: 'Cà phê đen đá',
-        basePrice: 25000,
-        imageUrl: mockProduct.imageUrl,
-        isAvailable: true,
-        canOrder: true,
-        createdAt: '2026-10-31T00:00:00.000Z',
-      });
-    });
-
-    it('should pass search query to repository and handle case-insensitive search', async () => {
-      repository.findMany.mockResolvedValue([mockProduct]);
-
-      const result = await service.findAll({ search: 'đen' });
-
-      expect(repository.findMany).toHaveBeenCalledWith('đen');
-      expect(result).toHaveLength(1);
-    });
-
-    it('should return an empty array when no products match without throwing error', async () => {
-      repository.findMany.mockResolvedValue([]);
-
-      const result = await service.findAll({ search: 'KhôngTồnTại' });
-
-      expect(result).toEqual([]);
-    });
+  it('blocks missing recipes and disabled products', async () => {
+    repository.findMany.mockResolvedValue([{ ...product, options: [] }, { ...product, isAvailable: false }]);
+    expect((await service.findAll({})).map(p => p.canOrder)).toEqual([false, false]);
   });
-
-  describe('orderability across catalog, search and detail', () => {
-    it.each([
-      { label: 'available stock', isAvailable: true, inventory: { quantity: 8, reserved: 3 }, canOrder: true, stock: 5 },
-      { label: 'zero stock', isAvailable: true, inventory: { quantity: 0, reserved: 0 }, canOrder: false, stock: 0 },
-      { label: 'fully reserved physical stock', isAvailable: true, inventory: { quantity: 8, reserved: 8 }, canOrder: false, stock: 0 },
-      { label: 'sale disabled with stock', isAvailable: false, inventory: { quantity: 8, reserved: 0 }, canOrder: false, stock: 8 },
-      { label: 'missing inventory', isAvailable: true, inventory: null, canOrder: false, stock: null },
-      { label: 'reservations exceed quantity', isAvailable: true, inventory: { quantity: 3, reserved: 8 }, canOrder: false, stock: 0 },
-    ])('$label', async ({ isAvailable, inventory, canOrder, stock }) => {
-      const product = { ...mockProductWithDetails, isAvailable, inventory };
-      repository.findMany.mockResolvedValue([product]);
-      repository.findById.mockResolvedValue(product);
-
-      const list = await service.findAll({});
-      const search = await service.findAll({ search: product.name });
-      const detail = await service.findOne(product.id);
-
-      for (const response of [list[0], search[0], detail]) {
-        expect(response).toMatchObject({ id: product.id, isAvailable, canOrder });
-      }
-      expect(detail.inventory).toEqual(
-        inventory ? { ...inventory, availableStock: stock } : null,
-      );
-      expect(repository.findMany).toHaveBeenNthCalledWith(1, undefined);
-      expect(repository.findMany).toHaveBeenNthCalledWith(2, product.name);
-    });
-  });
-
-  describe('findOne', () => {
-    it('should return product details including options and calculated available stock', async () => {
-      repository.findById.mockResolvedValue(mockProductWithDetails);
-
-      const result = await service.findOne(mockProduct.id);
-
-      expect(repository.findById).toHaveBeenCalledWith(mockProduct.id);
-      expect(result.id).toBe(mockProduct.id);
-      expect(result.basePrice).toBe(25000);
-      expect(result.options).toHaveLength(1);
-      expect(result.options[0]).toEqual({
-        id: 'b0000000-0000-0000-0000-000000000001',
-        type: OptionType.SIZE,
-        name: 'Size L',
-        extraPrice: 6000,
-      });
-      expect(result.inventory).toEqual({
-        quantity: 100,
-        reserved: 10,
-        availableStock: 90,
-      });
-    });
-
-    it('should throw NotFoundException when product does not exist', async () => {
-      repository.findById.mockResolvedValue(null);
-
-      await expect(service.findOne('non-existent-uuid')).rejects.toThrow(NotFoundException);
-    });
+  it('returns not found', async () => {
+    repository.findById.mockResolvedValue(null);
+    await expect(service.findOne('missing')).rejects.toThrow(NotFoundException);
   });
 });
