@@ -40,7 +40,7 @@ export const MenuProductCard: React.FC<MenuProductCardProps> = ({
   const [imgSrc, setImgSrc] = useState(product.imageUrl);
   const category = getCategory(product.categoryId);
   const BadgeIconComp = product.badge ? ICONS[product.badge.icon] : null;
-  const detailHref = `/thuc-don/${product.slug}`;
+  const detailHref = `/products/${product.slug}`;
 
   return (
     <article

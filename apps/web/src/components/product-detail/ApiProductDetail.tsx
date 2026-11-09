@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { fetchProductDetailFromApi, ProductApiError } from '../../services/product-api';
+import { checkCartAvailability, fetchProductDetailFromApi, ProductApiError } from '../../services/product-api';
 import { ProductDetail } from '../../types/product';
 import { DrinkCustomization } from '../../types/menu';
 import { DEFAULT_CUSTOMIZATION } from '../../data/menu-options';
@@ -32,7 +32,7 @@ export function ApiProductDetail({ id }: { id: string }) {
   }, [id, attempt]);
 
   return <div className="max-w-[1200px] mx-auto w-full px-margin md:px-margin-lg py-space-lg">
-    <nav aria-label="Breadcrumb" className="mb-6"><Link href="/thuc-don" className="text-secondary underline">Thực đơn</Link>{product && ` / ${product.name}`}</nav>
+    <nav aria-label="Breadcrumb" className="mb-6"><Link href="/products" className="text-secondary underline">Thực đơn</Link>{product && ` / ${product.name}`}</nav>
     {loading ? <div role="status" className="animate-pulse rounded-xl bg-surface-container p-12">Đang tải thông tin món...</div>
       : error ? <div role="alert" className="text-center py-12">
         <h1 className="font-display text-headline-sm">{error.statusCode === 404 || error.statusCode === 400 ? 'Không tìm thấy món' : 'Không thể tải thông tin món'}</h1>
@@ -49,28 +49,45 @@ function ProductContent({ product }: { product: ProductDetail }) {
     ...DEFAULT_CUSTOMIZATION, size: sizes[0]?.id ?? '', toppingIds: [],
   });
   const [quantity, setQuantity] = useState(1);
-  const { addItem } = useCart();
+  const { addItem, items, isChecking } = useCart();
   const { showToast } = useToast();
   const { isFavorite, toggleFavorite } = useFavorites();
   const router = useRouter();
-  const stock = product.inventory?.availableStock ?? 0;
-  const available = product.isAvailable && product.canOrder !== false && stock > 0;
+  const [stock, setStock] = useState(0);
+  const [checkingStock, setCheckingStock] = useState(true);
+  const [stockError, setStockError] = useState<string | null>(null);
+  const [stockAttempt, setStockAttempt] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setCheckingStock(true);
+    setStockError(null);
+    checkCartAvailability([...items, { productId: product.id, customization, quantity }])
+      .then(result => { if (active) setStock(result.items[result.items.length - 1].availableQuantity); })
+      .catch((error: unknown) => { if (active) { setStock(0); setStockError(error instanceof Error ? error.message : 'Không thể kiểm tra nguyên liệu.'); } })
+      .finally(() => { if (active) setCheckingStock(false); });
+    return () => { active = false; };
+  }, [product.id, customization.size, customization.toppingIds, stockAttempt, items, quantity]);
+  const available = !checkingStock && product.isAvailable && stock > 0;
+  const canAdd = available && !stockError && !isChecking && quantity <= stock;
   const total = calcUnitPrice(product.basePrice, customization, product.options) * quantity;
-  const add = (buyNow: boolean) => {
-    if (!available || quantity > stock) return;
-    addItem({ productId: product.id, name: product.name, imageUrl: product.imageUrl,
+  const add = async (buyNow: boolean) => {
+    if (!canAdd) return;
+    if (quantity > stock) { showToast('Không đủ số lượng.'); return; }
+    const added = await addItem({ productId: product.id, name: product.name, imageUrl: product.imageUrl,
       basePrice: product.basePrice, productOptions: product.options, customization, quantity });
+    if (!added) return;
     showToast(`Đã thêm ${quantity}x ${product.name} vào giỏ!`);
     if (buyNow) router.push('/gio-hang');
   };
 
   return <div className="grid grid-cols-1 lg:grid-cols-2 gap-gutter-lg items-start">
-    <ProductGallery name={product.name} images={[product.imageUrl]} badges={[available ? 'Còn món' : 'Tạm hết món']} tags={[]}
+    <ProductGallery name={product.name} images={[product.imageUrl]} badges={[checkingStock ? 'Đang kiểm tra' : stockError ? 'Chưa xác định tồn kho' : available ? 'Còn món' : 'Tạm hết món']} tags={[]}
       isAvailable={available} isFavorite={isFavorite(product.id)} onToggleFavorite={() => toggleFavorite(product.id)} />
     <div className="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col gap-6">
       <h1 className="font-display text-headline-display-mobile font-bold">{product.name}</h1>
       <p className="text-primary text-headline-lg font-bold">{formatCurrency(product.basePrice)}</p>
-      <p>{available ? `Còn ${stock} ly có thể đặt` : 'Món hiện không thể đặt.'}</p>
+      {stockError && <div role="alert" className="text-error">{stockError} <button type="button" className="underline" onClick={() => setStockAttempt(n => n + 1)}>Thử lại</button></div>}
+      <p>{stockError ? 'Chưa kiểm tra được số lượng có thể bán.' : checkingStock ? 'Đang kiểm tra nguyên liệu...' : available ? `Còn ${stock} ly có thể đặt theo lựa chọn này` : 'Món hiện không thể đặt theo lựa chọn này.'}</p>
       {sizes.length > 0 && <fieldset>
         <legend className="font-bold mb-3">Chọn kích thước</legend>
         <div className="flex flex-wrap gap-3">{sizes.map((size) => <button key={size.id} type="button" aria-pressed={customization.size === size.id}
@@ -92,13 +109,14 @@ function ProductContent({ product }: { product: ProductDetail }) {
           className="rounded-full px-4 py-3 bg-surface-container" placeholder="Ghi chú cho món của bạn" />
       </label>
       <label className="flex items-center justify-between gap-3">Số lượng
-        <input aria-label="Số lượng" type="number" min={1} max={Math.max(1, Math.min(99, stock))} disabled={!available} value={quantity}
-          onChange={(e) => setQuantity(Math.max(1, Math.min(99, stock, Math.floor(Number(e.target.value) || 1))))}
+        <input aria-label="Số lượng" type="number" min={1} max={Math.max(1, Math.min(99, stock))} value={quantity}
+          onChange={(e) => setQuantity(Math.max(1, Math.min(99, Math.floor(Number(e.target.value) || 1))))}
           className="w-24 rounded-full px-4 py-2 bg-surface-container" />
       </label>
+      {!checkingStock && !stockError && quantity > stock && <p role="alert" className="text-error">Không đủ số lượng.</p>}
       <p className="font-bold text-headline-sm">Tổng: <span data-testid="api-detail-total">{formatCurrency(total)}</span></p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <button disabled={!available} onClick={() => add(false)} className="rounded-full px-5 py-3 bg-primary text-on-primary disabled:opacity-40">Thêm vào giỏ hàng</button>
+        <button disabled={!canAdd} onClick={() => add(false)} className="rounded-full px-5 py-3 bg-primary text-on-primary disabled:opacity-40">Thêm vào giỏ hàng</button>
         <button disabled={!available} onClick={() => add(true)} className="rounded-full px-5 py-3 bg-secondary text-on-secondary disabled:opacity-40">Mua ngay</button>
       </div>
     </div>

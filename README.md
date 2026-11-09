@@ -154,7 +154,7 @@ docker compose logs migration
 ### 8. Địa chỉ truy cập các dịch vụ
 Sau khi các container ở trạng thái `healthy` hoặc `running`:
 - **Giao diện người dùng Web (Next.js):** [http://localhost:3006](http://localhost:3006)
-  - Trang Thực đơn: [http://localhost:3006/thuc-don](http://localhost:3006/thuc-don)
+  - Trang Thực đơn: [http://localhost:3006/products](http://localhost:3006/products)
   - Trang Đăng nhập: [http://localhost:3006/login](http://localhost:3006/login)
   - Trang Đăng ký: [http://localhost:3006/register](http://localhost:3006/register)
   - Trang Thanh toán: [http://localhost:3006/thanh-toan](http://localhost:3006/thanh-toan)
@@ -245,8 +245,8 @@ Một trong những lỗi phổ biến nhất khi triển khai full-stack với 
 
 ### Tích hợp Products API trên giao diện
 
-- `/thuc-don` lấy danh sách từ `GET /api/products`, hỗ trợ tìm tên không dấu và sắp xếp giá trên danh sách đã tải.
-- `/thuc-don/<UUID>` lấy chi tiết từ `GET /api/products/:id`; các liên kết từ thực đơn sử dụng ID backend.
+- `/products` lấy danh sách từ `GET /api/products`, hỗ trợ tìm tên không dấu và sắp xếp giá trên danh sách đã tải.
+- `/products/<UUID>` lấy chi tiết từ `GET /api/products/:id`; các liên kết từ thực đơn sử dụng ID backend.
 - Tên, ảnh, giá, trạng thái đặt món, tồn kho và size/topping đều lấy từ backend. Không tự chuyển sang `MOCK_PRODUCTS` khi API lỗi; giao diện hiển thị lỗi và nút thử lại.
 - API hiện chưa có danh mục, mô tả, đánh giá hoặc doanh số; các trang này chưa hiển thị những trường đó.
 - Giỏ hàng lưu UUID sản phẩm, UUID tùy chọn và snapshot phụ thu từ API để tính lại giá khi đổi size. Snapshot chỉ phục vụ hiển thị; Orders API sau này vẫn phải kiểm tra tồn kho và tính lại giá.

@@ -1,8 +1,8 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import MenuPage from '../../app/thuc-don/page';
-import ProductPage from '../../app/thuc-don/[slug]/page';
+import MenuPage from '../../app/products/page';
+import ProductPage from '../../app/products/[slug]/page';
 import { CartProvider, useCart } from '../cart/CartProvider';
 import { CartView } from '../cart/CartView';
 import { FavoritesProvider } from '../favorites/FavoritesProvider';
@@ -41,7 +41,7 @@ it('trang thực đơn dùng dữ liệu API và link UUID, tìm không dấu v�
   (fetchProductsFromApi as jest.Mock).mockResolvedValue([product]);
   setup(<MenuPage searchParams={{}} />);
   expect(screen.getByText('Đang tải thực đơn...')).toBeInTheDocument();
-  expect(await screen.findByRole('link', { name: 'Chọn món' })).toHaveAttribute('href', `/thuc-don/${product.id}`);
+  expect(await screen.findByRole('link', { name: 'Chọn món' })).toHaveAttribute('href', `/products/${product.id}`);
   expect(screen.queryByText('1,500+ Review')).not.toBeInTheDocument();
   await userEvent.type(screen.getByRole('searchbox'), 'ca phe');
   expect(screen.getByText(product.name)).toBeInTheDocument();

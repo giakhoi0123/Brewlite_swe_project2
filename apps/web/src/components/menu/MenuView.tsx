@@ -55,8 +55,8 @@ export const MenuView: React.FC<MenuViewProps> = ({ products, initialSearch = ''
     }
   };
 
-  const addToCart = (product: MenuProduct, customization: DrinkCustomization, quantity: number) => {
-    addItem({
+  const addToCart = async (product: MenuProduct, customization: DrinkCustomization, quantity: number) => {
+    const added = await addItem({
       productId: product.id,
       name: product.name,
       imageUrl: product.imageUrl,
@@ -64,6 +64,7 @@ export const MenuView: React.FC<MenuViewProps> = ({ products, initialSearch = ''
       customization,
       quantity,
     });
+    if (!added) return false;
     showToast(`Đã thêm ${quantity}x ${product.name} vào giỏ!`);
   };
 

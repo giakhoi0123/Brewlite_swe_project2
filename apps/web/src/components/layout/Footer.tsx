@@ -59,7 +59,7 @@ export const Footer: React.FC = () => (
           <ul className="space-y-space-xs text-body-md">
             {MENU_LINKS.map((label) => (
               <li key={label}>
-                <Link href="/thuc-don" className="hover:text-primary transition-colors">
+                <Link href="/products" className="hover:text-primary transition-colors">
                   {label}
                 </Link>
               </li>
