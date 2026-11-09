@@ -1,7 +1,7 @@
 import {
   fetchProductsFromApi,
   fetchProductDetailFromApi,
-  checkProductAvailabilityApi,
+  checkCartAvailability,
   ProductApiError,
 } from '../product-api';
 
@@ -121,108 +121,158 @@ describe('product-api service', () => {
     });
   });
 
-  describe('checkProductAvailabilityApi', () => {
-    const mockAvailability = {
-      productId: 'a0000000-0000-0000-0000-000000000001',
-      availableStock: 12,
+  describe('checkCartAvailability', () => {
+    const mockCanonicalResult = {
       canOrder: true,
+      items: [
+        {
+          index: 0,
+          productId: 'prod-001',
+          sizeId: 'size-m',
+          requestedQuantity: 2,
+          availableQuantity: 10,
+          canOrder: true,
+        },
+      ],
     };
 
-    it('1. calls the exact endpoint URL with product id and POST method', async () => {
+    const inputItems = [
+      {
+        productId: 'prod-001',
+        customization: {
+          size: 'size-m',
+          toppingIds: ['top-1', 'top-2'],
+        },
+        quantity: 2,
+      },
+    ];
+
+    it('1. calls the exact canonical endpoint POST /products/availability', async () => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
-        json: async () => mockAvailability,
+        json: async () => mockCanonicalResult,
       });
 
-      await checkProductAvailabilityApi('a0000000-0000-0000-0000-000000000001', ['opt-1', 'opt-2']);
+      await checkCartAvailability(inputItems);
 
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringMatching(/\/products\/a0000000-0000-0000-0000-000000000001\/availability$/),
+        expect.stringMatching(/\/products\/availability$/),
         expect.objectContaining({
           method: 'POST',
+          cache: 'no-store',
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
+            Accept: 'application/json',
           }),
         }),
       );
     });
 
-    it('2. body only contains selectedOptions payload without extra fields', async () => {
+    it('2. body correctly structures { items: [...] } without extra fields', async () => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
-        json: async () => mockAvailability,
+        json: async () => mockCanonicalResult,
       });
 
-      await checkProductAvailabilityApi('prod-1', ['opt-size', 'opt-topping']);
+      await checkCartAvailability(inputItems);
 
-      const fetchCall = (global.fetch as jest.Mock).mock.calls[0];
-      const parsedBody = JSON.parse(fetchCall[1].body);
+      const callArgs = (global.fetch as jest.Mock).mock.calls[0];
+      const parsedBody = JSON.parse(callArgs[1].body);
 
       expect(parsedBody).toEqual({
-        selectedOptions: ['opt-size', 'opt-topping'],
+        items: [
+          {
+            productId: 'prod-001',
+            sizeId: 'size-m',
+            toppingIds: ['top-1', 'top-2'],
+            quantity: 2,
+          },
+        ],
       });
-      expect(Object.keys(parsedBody)).toEqual(['selectedOptions']);
+      expect(parsedBody.items[0]).not.toHaveProperty('notes');
+      expect(parsedBody.items[0]).not.toHaveProperty('unitPrice');
+      expect(parsedBody.items[0]).not.toHaveProperty('userId');
     });
 
-    it('3. parses and returns valid availability response correctly', async () => {
+    it('3. passes AbortSignal directly to fetch', async () => {
+      const controller = new AbortController();
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
-        json: async () => mockAvailability,
+        json: async () => mockCanonicalResult,
       });
 
-      const result = await checkProductAvailabilityApi('prod-1', ['opt-size']);
-      expect(result).toEqual(mockAvailability);
-    });
+      await checkCartAvailability(inputItems, controller.signal);
 
-    it('4. rejects structurally invalid response (e.g. non-integer or negative stock)', async () => {
-      global.fetch = jest.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          productId: 'prod-1',
-          availableStock: -5, // Invalid negative stock
-          canOrder: true,
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          signal: controller.signal,
         }),
-      });
-
-      await expect(checkProductAvailabilityApi('prod-1', ['opt-size'])).rejects.toThrow(
-        'Phản hồi kiểm tra nguyên liệu từ máy chủ không đúng định dạng',
       );
     });
 
-    it('5. handles 400 bad request error with specific message', async () => {
+    it('4. parses canonical response accurately', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => mockCanonicalResult,
+      });
+
+      const result = await checkCartAvailability(inputItems);
+
+      expect(result).toEqual(mockCanonicalResult);
+      expect(result.canOrder).toBe(true);
+      expect(result.items[0].availableQuantity).toBe(10);
+    });
+
+    it('5. rejects malformed response without canOrder boolean or items array', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ invalid: true }),
+      });
+
+      await expect(checkCartAvailability(inputItems)).rejects.toMatchObject({
+        name: 'ProductApiError',
+        statusCode: 500,
+        message: 'Phản hồi kiểm tra nguyên liệu từ máy chủ không đúng định dạng',
+      });
+    });
+
+    it('5b. rejects response when items contain invalid item structure', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          canOrder: true,
+          items: [{ index: 0, productId: 'p1' }], // missing required fields
+        }),
+      });
+
+      await expect(checkCartAvailability(inputItems)).rejects.toMatchObject({
+        name: 'ProductApiError',
+        statusCode: 500,
+        message: 'Dữ liệu dòng kiểm tra nguyên liệu không đúng định dạng',
+      });
+    });
+
+    it('6. safely handles HTTP error responses without leaking internal stack traces', async () => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: false,
         status: 400,
       });
 
-      await expect(checkProductAvailabilityApi('prod-1', [])).rejects.toThrow(
-        'Tùy chọn không hợp lệ hoặc thiếu kích cỡ',
-      );
-    });
-
-    it('6. handles 404 not found error with specific message', async () => {
-      global.fetch = jest.fn().mockResolvedValue({
-        ok: false,
-        status: 404,
+      await expect(checkCartAvailability(inputItems)).rejects.toMatchObject({
+        name: 'ProductApiError',
+        statusCode: 400,
+        message: 'Tùy chọn không hợp lệ hoặc thiếu kích cỡ',
       });
-
-      await expect(checkProductAvailabilityApi('non-existent-id', ['opt-1'])).rejects.toThrow(
-        'Sản phẩm không tồn tại hoặc đã ngừng kinh doanh',
-      );
     });
 
-    it('7. supports AbortSignal for request cancellation and propagates AbortError', async () => {
-      const abortError = Object.assign(new Error('The operation was aborted'), {
+    it('7. rethrows AbortError verbatim so component can ignore stale cancellations', async () => {
+      const abortError = Object.assign(new Error('Operation aborted'), {
         name: 'AbortError',
       });
       global.fetch = jest.fn().mockRejectedValue(abortError);
 
-      const controller = new AbortController();
-      controller.abort();
-
-      await expect(
-        checkProductAvailabilityApi('prod-1', ['opt-1'], controller.signal),
-      ).rejects.toMatchObject({ name: 'AbortError' });
+      await expect(checkCartAvailability(inputItems)).rejects.toBe(abortError);
     });
   });
 });

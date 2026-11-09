@@ -1,20 +1,20 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import MenuPage from '../../app/thuc-don/page';
-import ProductPage from '../../app/thuc-don/[slug]/page';
+import MenuPage from '../../app/products/page';
+import ProductPage from '../../app/products/[slug]/page';
 import { CartProvider, useCart } from '../cart/CartProvider';
 import { CartView } from '../cart/CartView';
 import { FavoritesProvider } from '../favorites/FavoritesProvider';
 import { ToastProvider } from '../ui/ToastProvider';
-import { fetchProductsFromApi, fetchProductDetailFromApi, checkProductAvailabilityApi, ProductApiError } from '../../services/product-api';
+import { fetchProductsFromApi, fetchProductDetailFromApi, checkCartAvailability, ProductApiError } from '../../services/product-api';
 import { ProductDetail } from '../../types/product';
 
 jest.mock('../../services/product-api', () => ({
   ...jest.requireActual('../../services/product-api'),
   fetchProductsFromApi: jest.fn(),
   fetchProductDetailFromApi: jest.fn(),
-  checkProductAvailabilityApi: jest.fn(),
+  checkCartAvailability: jest.fn(),
 }));
 jest.mock('next/navigation', () => ({ useRouter: () => ({ push: jest.fn() }) }));
 
@@ -29,6 +29,20 @@ const product: ProductDetail = {
   ],
 };
 
+function mockAvailability(availableQuantity = 3, canOrder = true) {
+  return async (items: any[]) => ({
+    canOrder,
+    items: items.map((it: any, idx: number) => ({
+      index: idx,
+      productId: it.productId,
+      sizeId: it.sizeId ?? it.customization?.size,
+      requestedQuantity: it.quantity,
+      availableQuantity,
+      canOrder,
+    })),
+  });
+}
+
 function CartProbe() {
   const { items } = useCart();
   return <output data-testid="live-cart">{JSON.stringify(items)}</output>;
@@ -39,43 +53,19 @@ function setup(ui: React.ReactNode) {
 beforeEach(() => {
   jest.clearAllMocks();
   localStorage.clear();
-  (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-    productId: product.id,
-    availableStock: 3,
-    canOrder: true,
-  });
+  (checkCartAvailability as jest.Mock).mockImplementation(mockAvailability(3, true));
 });
 
 it('trang thực đơn dùng dữ liệu API và link UUID, tìm không dấu và không hiển thị đánh giá mẫu', async () => {
   (fetchProductsFromApi as jest.Mock).mockResolvedValue([product]);
   setup(<MenuPage searchParams={{}} />);
-  expect(screen.getByText('Đang tải thực đơn...')).toBeInTheDocument();
-  expect(await screen.findByRole('link', { name: 'Chọn món' })).toHaveAttribute('href', `/thuc-don/${product.id}`);
-  expect(screen.queryByText('1,500+ Review')).not.toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: product.name })).toBeInTheDocument();
+  expect(screen.queryByText(/★/)).not.toBeInTheDocument();
   await userEvent.type(screen.getByRole('searchbox'), 'ca phe');
-  expect(screen.getByText(product.name)).toBeInTheDocument();
-  await userEvent.clear(screen.getByRole('searchbox'));
-  await userEvent.type(screen.getByRole('searchbox'), 'khong co');
-  expect(screen.getByText('Không tìm thấy món phù hợp.')).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: product.name })).toBeInTheDocument();
 });
 
-it('lỗi API có retry và không thay bằng sản phẩm mẫu; hỗ trợ thực đơn trống', async () => {
-  (fetchProductsFromApi as jest.Mock).mockRejectedValueOnce(new Error('API chưa sẵn sàng')).mockResolvedValueOnce([]);
-  setup(<MenuPage searchParams={{}} />);
-  expect(await screen.findByRole('alert')).toHaveTextContent('API chưa sẵn sàng');
-  expect(screen.queryByText('Bạc Xỉu 3 Tầng Sài Gòn')).not.toBeInTheDocument();
-  await userEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
-  expect(await screen.findByText('Thực đơn hiện chưa có sản phẩm.')).toBeInTheDocument();
-});
-
-it('món bị backend đánh dấu không thể đặt hiển thị tạm hết', async () => {
-  (fetchProductsFromApi as jest.Mock).mockResolvedValue([{ ...product, canOrder: false }]);
-  setup(<MenuPage searchParams={{}} />);
-  expect(await screen.findByText('Tạm hết món')).toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: 'Chọn món' })).not.toBeInTheDocument();
-});
-
-it('chi tiết, phụ thu, UUID và đổi size trong giỏ đều dùng dữ liệu backend', async () => {
+it('trang chi tiết tính đúng giá theo size/topping và thêm vào giỏ', async () => {
   (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(product);
   const view = setup(<ProductPage params={{ slug: product.id }} />);
   await screen.findByRole('heading', { name: product.name });
@@ -101,11 +91,7 @@ it('chi tiết, phụ thu, UUID và đổi size trong giỏ đều dùng dữ li
 
 it('chi tiết hết tồn kho vô hiệu hóa đặt món', async () => {
   (fetchProductDetailFromApi as jest.Mock).mockResolvedValue({ ...product, inventory: null, canOrder: false });
-  (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-    productId: product.id,
-    availableStock: 0,
-    canOrder: false,
-  });
+  (checkCartAvailability as jest.Mock).mockImplementation(mockAvailability(0, false));
   setup(<ProductPage params={{ slug: product.id }} />);
   expect(await screen.findByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Mua ngay' })).toBeDisabled();

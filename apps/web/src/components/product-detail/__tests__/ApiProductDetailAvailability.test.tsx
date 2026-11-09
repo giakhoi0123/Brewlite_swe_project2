@@ -7,19 +7,21 @@ import { FavoritesProvider } from '../../favorites/FavoritesProvider';
 import { ToastProvider } from '../../ui/ToastProvider';
 import {
   fetchProductDetailFromApi,
-  checkProductAvailabilityApi,
+  checkCartAvailability,
   ProductApiError,
+  AvailabilityResult,
 } from '../../../services/product-api';
 import { ProductDetail } from '../../../types/product';
+
+const mockPush = jest.fn();
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush }),
+}));
 
 jest.mock('../../../services/product-api', () => ({
   ...jest.requireActual('../../../services/product-api'),
   fetchProductDetailFromApi: jest.fn(),
-  checkProductAvailabilityApi: jest.fn(),
-}));
-
-jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: jest.fn() }),
+  checkCartAvailability: jest.fn(),
 }));
 
 const mockProduct: ProductDetail = {
@@ -36,6 +38,20 @@ const mockProduct: ProductDetail = {
     { id: 'topping-jelly-id', type: 'TOPPING', name: 'Thạch cà phê', extraPrice: 5000 },
   ],
 };
+
+function mockAvailabilityResponse(availableQuantity = 10, canOrder = true, overallCanOrder = true) {
+  return async (items: any[]): Promise<AvailabilityResult> => ({
+    canOrder: overallCanOrder,
+    items: items.map((it: any, idx: number) => ({
+      index: idx,
+      productId: it.productId,
+      sizeId: it.customization?.size ?? 'size-m-id',
+      requestedQuantity: it.quantity,
+      availableQuantity,
+      canOrder,
+    })),
+  });
+}
 
 function CartProbe() {
   const { items } = useCart();
@@ -55,18 +71,20 @@ function renderComponent(productId = mockProduct.id) {
   );
 }
 
-describe('ApiProductDetail Recipe Availability Integration', () => {
+describe('ApiProductDetail Canonical Availability Integration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPush.mockReset();
     localStorage.clear();
     (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(mockProduct);
+    (checkCartAvailability as jest.Mock).mockImplementation(mockAvailabilityResponse(10, true, true));
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it('7. không gọi API availability khi chưa chọn SIZE', async () => {
+  it('1. không gọi API availability khi chưa chọn SIZE', async () => {
     const productNoSize: ProductDetail = {
       ...mockProduct,
       options: [
@@ -78,39 +96,33 @@ describe('ApiProductDetail Recipe Availability Integration', () => {
     renderComponent();
     await screen.findByRole('heading', { name: mockProduct.name });
 
-    expect(checkProductAvailabilityApi).not.toHaveBeenCalled();
+    expect(checkCartAvailability).not.toHaveBeenCalled();
     expect(
       screen.getByText('Chọn kích cỡ để xem số lượng có thể đặt'),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
+    expect(screen.getByText('Chọn kích cỡ')).toBeInTheDocument();
   });
 
-  it('8. chọn SIZE gọi API đúng option ID', async () => {
-    (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-      productId: mockProduct.id,
-      availableStock: 25,
-      canOrder: true,
-    });
-
+  it('2. chọn SIZE gọi checkCartAvailability với preview line và AbortSignal', async () => {
     renderComponent();
     await screen.findByRole('heading', { name: mockProduct.name });
 
     await waitFor(() => {
-      expect(checkProductAvailabilityApi).toHaveBeenCalledWith(
-        mockProduct.id,
-        ['size-m-id'],
+      expect(checkCartAvailability).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            productId: mockProduct.id,
+            customization: expect.objectContaining({ size: 'size-m-id' }),
+            quantity: 1,
+          }),
+        ],
         expect.any(AbortSignal),
       );
     });
   });
 
-  it('9. chọn SIZE + TOPPING gửi toàn bộ selectedOptions', async () => {
-    (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-      productId: mockProduct.id,
-      availableStock: 20,
-      canOrder: true,
-    });
-
+  it('3. chọn SIZE + TOPPING gửi toàn bộ options trong preview line', async () => {
     renderComponent();
     await screen.findByRole('heading', { name: mockProduct.name });
 
@@ -118,17 +130,72 @@ describe('ApiProductDetail Recipe Availability Integration', () => {
     await userEvent.click(screen.getByRole('checkbox', { name: /Thạch cà phê/ }));
 
     await waitFor(() => {
-      expect(checkProductAvailabilityApi).toHaveBeenCalledWith(
-        mockProduct.id,
-        ['size-m-id', 'topping-jelly-id'],
+      expect(checkCartAvailability).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            productId: mockProduct.id,
+            customization: expect.objectContaining({
+              size: 'size-m-id',
+              toppingIds: ['topping-jelly-id'],
+            }),
+            quantity: 1,
+          }),
+        ],
         expect.any(AbortSignal),
       );
     });
   });
 
-  it('10. hiển thị loading "Đang kiểm tra nguyên liệu..." trong lúc gọi API', async () => {
+  it('4. gửi cart items hiện tại cùng preview line và chọn đúng result theo index', async () => {
+    const existingCart = {
+      items: [
+        {
+          lineId: 'existing-line-1',
+          productId: 'prod-existing',
+          name: 'Trà đào',
+          imageUrl: '',
+          basePrice: 30000,
+          unitPrice: 30000,
+          quantity: 2,
+          customization: { size: 'size-existing', toppingIds: [] },
+          productOptions: [],
+        },
+      ],
+      voucherCode: null,
+    };
+    localStorage.setItem('brewlite-cart', JSON.stringify(existingCart));
+
+    (checkCartAvailability as jest.Mock).mockImplementation(async (items: any[]) => ({
+      canOrder: true,
+      items: [
+        {
+          index: 0,
+          productId: 'prod-existing',
+          sizeId: 'size-existing',
+          requestedQuantity: 2,
+          availableQuantity: 5,
+          canOrder: true,
+        },
+        {
+          index: 1,
+          productId: mockProduct.id,
+          sizeId: 'size-m-id',
+          requestedQuantity: 1,
+          availableQuantity: 18, // Preview line có 18 ly
+          canOrder: true,
+        },
+      ],
+    }));
+
+    renderComponent();
+    await screen.findByRole('heading', { name: mockProduct.name });
+
+    expect(await screen.findByText('Còn tối đa 18 ly')).toBeInTheDocument();
+  });
+
+  it('5. hiển thị loading "Đang kiểm tra nguyên liệu..." trong lúc gọi API', async () => {
     let resolveApi: (value: any) => void;
-    (checkProductAvailabilityApi as jest.Mock).mockReturnValue(
+    (checkCartAvailability as jest.Mock).mockReturnValue(
       new Promise((res) => {
         resolveApi = res;
       }),
@@ -138,36 +205,30 @@ describe('ApiProductDetail Recipe Availability Integration', () => {
     await screen.findByRole('heading', { name: mockProduct.name });
 
     expect(screen.getByText('Đang kiểm tra nguyên liệu...')).toBeInTheDocument();
+    expect(screen.getByText('Đang kiểm tra')).toBeInTheDocument();
 
-    resolveApi!({
-      productId: mockProduct.id,
-      availableStock: 10,
-      canOrder: true,
-    });
+    resolveApi(await mockAvailabilityResponse(10, true, true)([
+      { productId: mockProduct.id, customization: { size: 'size-m-id', toppingIds: [] }, quantity: 1 },
+    ]));
 
     expect(await screen.findByText('Còn tối đa 10 ly')).toBeInTheDocument();
   });
 
-  it('11. hiển thị "Còn tối đa X ly" khi còn nguyên liệu', async () => {
-    (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-      productId: mockProduct.id,
-      availableStock: 42,
-      canOrder: true,
-    });
+  it('6. hiển thị "Còn tối đa X ly" khi còn nguyên liệu', async () => {
+    (checkCartAvailability as jest.Mock).mockImplementation(mockAvailabilityResponse(42, true, true));
 
     renderComponent();
     await screen.findByRole('heading', { name: mockProduct.name });
 
     expect(await screen.findByText('Còn tối đa 42 ly')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeEnabled();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeEnabled();
+    });
+    expect(screen.getByText('Còn món')).toBeInTheDocument();
   });
 
-  it('12. availableStock = 0 hiển thị "Món hiện không đủ nguyên liệu" và khóa nút thêm', async () => {
-    (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-      productId: mockProduct.id,
-      availableStock: 0,
-      canOrder: false,
-    });
+  it('7. availableQuantity = 0 hiển thị "Món hiện không đủ nguyên liệu" và khóa nút thêm', async () => {
+    (checkCartAvailability as jest.Mock).mockImplementation(mockAvailabilityResponse(0, false, false));
 
     renderComponent();
     await screen.findByRole('heading', { name: mockProduct.name });
@@ -175,14 +236,11 @@ describe('ApiProductDetail Recipe Availability Integration', () => {
     expect(await screen.findByText('Món hiện không đủ nguyên liệu')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Mua ngay' })).toBeDisabled();
+    expect(screen.getByText('Tạm hết món')).toBeInTheDocument();
   });
 
-  it('13. canOrder = false khóa nút thêm vào giỏ', async () => {
-    (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-      productId: mockProduct.id,
-      availableStock: 15,
-      canOrder: false,
-    });
+  it('8. preview canOrder = false khóa nút thêm vào giỏ', async () => {
+    (checkCartAvailability as jest.Mock).mockImplementation(mockAvailabilityResponse(15, false, false));
 
     renderComponent();
     await screen.findByRole('heading', { name: mockProduct.name });
@@ -191,12 +249,29 @@ describe('ApiProductDetail Recipe Availability Integration', () => {
     expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
   });
 
-  it('14. không cho tăng quantity vượt quá availableStock', async () => {
-    (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-      productId: mockProduct.id,
-      availableStock: 5,
-      canOrder: true,
-    });
+  it('9. overall canOrder = false khóa nút thêm vào giỏ dù preview line còn hàng', async () => {
+    (checkCartAvailability as jest.Mock).mockImplementation(async (items: any[]) => ({
+      canOrder: false,
+      items: items.map((it, idx) => ({
+        index: idx,
+        productId: it.productId,
+        sizeId: it.customization.size,
+        requestedQuantity: it.quantity,
+        availableQuantity: 15,
+        canOrder: true,
+      })),
+    }));
+
+    renderComponent();
+    await screen.findByRole('heading', { name: mockProduct.name });
+
+    expect(await screen.findByText('Món hiện không đủ nguyên liệu')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
+    expect(screen.getByText('Tạm hết món')).toBeInTheDocument();
+  });
+
+  it('10. không cho tăng quantity vượt quá availableQuantity', async () => {
+    (checkCartAvailability as jest.Mock).mockImplementation(mockAvailabilityResponse(5, true, true));
 
     renderComponent();
     await screen.findByRole('heading', { name: mockProduct.name });
@@ -206,22 +281,25 @@ describe('ApiProductDetail Recipe Availability Integration', () => {
     await userEvent.clear(input);
     await userEvent.type(input, '10');
 
-    // Capped at 5
     expect(input).toHaveValue(5);
   });
 
-  it('15. đổi option làm stock giảm thì quantity tự điều chỉnh và có thông báo', async () => {
-    (checkProductAvailabilityApi as jest.Mock)
-      .mockResolvedValueOnce({
-        productId: mockProduct.id,
-        availableStock: 10,
+  it('11. đổi option làm stock giảm thì quantity tự điều chỉnh và có thông báo', async () => {
+    (checkCartAvailability as jest.Mock).mockImplementation(async (items: any[]) => {
+      const last = items[items.length - 1];
+      const stock = last?.customization?.size === 'size-l-id' ? 3 : 10;
+      return {
         canOrder: true,
-      })
-      .mockResolvedValueOnce({
-        productId: mockProduct.id,
-        availableStock: 3, // Stock drops to 3
-        canOrder: true,
-      });
+        items: items.map((it, idx) => ({
+          index: idx,
+          productId: it.productId,
+          sizeId: it.customization?.size ?? 'size-m-id',
+          requestedQuantity: it.quantity,
+          availableQuantity: stock,
+          canOrder: true,
+        })),
+      };
+    });
 
     renderComponent();
     await screen.findByRole('heading', { name: mockProduct.name });
@@ -238,32 +316,59 @@ describe('ApiProductDetail Recipe Availability Integration', () => {
       expect(input).toHaveValue(3);
     });
     expect(
-      screen.getByText('Số lượng đã được điều chỉnh theo nguyên liệu hiện có.'),
+      await screen.findByText('Số lượng đã được điều chỉnh theo nguyên liệu hiện có.'),
     ).toBeInTheDocument();
   });
 
-  it('16. API lỗi không làm trắng trang và hiển thị thông báo lỗi', async () => {
-    (checkProductAvailabilityApi as jest.Mock).mockRejectedValue(
-      new ProductApiError('Lỗi máy chủ', 500),
+  it('12. khi availableQuantity = 0, quantity giữ nguyên >= 1 không bị kéo về 0', async () => {
+    (checkCartAvailability as jest.Mock).mockImplementation(mockAvailabilityResponse(0, false, false));
+
+    renderComponent();
+    await screen.findByRole('heading', { name: mockProduct.name });
+    await screen.findByText('Món hiện không đủ nguyên liệu');
+
+    const input = screen.getByRole('spinbutton');
+    expect(input).toHaveValue(1);
+    expect(input).toBeDisabled();
+  });
+
+  it('13. direct input rỗng, 0, âm hoặc NaN tự động reset về 1', async () => {
+    (checkCartAvailability as jest.Mock).mockImplementation(mockAvailabilityResponse(10, true, true));
+
+    renderComponent();
+    await screen.findByRole('heading', { name: mockProduct.name });
+    await screen.findByText('Còn tối đa 10 ly');
+
+    const input = screen.getByRole('spinbutton');
+
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input).toHaveValue(1);
+
+    fireEvent.change(input, { target: { value: '0' } });
+    expect(input).toHaveValue(1);
+
+    fireEvent.change(input, { target: { value: '-5' } });
+    expect(input).toHaveValue(1);
+  });
+
+  it('14. API lỗi hiển thị thông báo lỗi và nút Thử lại', async () => {
+    (checkCartAvailability as jest.Mock).mockRejectedValue(
+      new ProductApiError('Lỗi kết nối máy chủ', 500),
     );
 
     renderComponent();
     await screen.findByRole('heading', { name: mockProduct.name });
 
-    expect(
-      await screen.findByText('Không thể kiểm tra nguyên liệu. Vui lòng thử lại.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Lỗi kết nối máy chủ')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Thử lại' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
+    expect(screen.getByText('Chưa xác định')).toBeInTheDocument();
   });
 
-  it('17. có thể thử lại khi API lỗi', async () => {
-    (checkProductAvailabilityApi as jest.Mock)
+  it('15. nút "Thử lại" gọi lại API', async () => {
+    (checkCartAvailability as jest.Mock)
       .mockRejectedValueOnce(new ProductApiError('Lỗi tạm thời', 500))
-      .mockResolvedValueOnce({
-        productId: mockProduct.id,
-        availableStock: 20,
-        canOrder: true,
-      });
+      .mockImplementationOnce(mockAvailabilityResponse(12, true, true));
 
     renderComponent();
     await screen.findByRole('heading', { name: mockProduct.name });
@@ -271,743 +376,238 @@ describe('ApiProductDetail Recipe Availability Integration', () => {
     const retryBtn = await screen.findByRole('button', { name: 'Thử lại' });
     await userEvent.click(retryBtn);
 
-    expect(await screen.findByText('Còn tối đa 20 ly')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeEnabled();
+    expect(await screen.findByText('Còn tối đa 12 ly')).toBeInTheDocument();
   });
 
-  it('18. response cũ không ghi đè response mới (stale request prevention via AbortController)', async () => {
-    let resolveFirst: (val: any) => void;
-    let resolveSecond: (val: any) => void;
-
-    (checkProductAvailabilityApi as jest.Mock)
-      .mockImplementationOnce(() => new Promise((res) => { resolveFirst = res; }))
-      .mockImplementationOnce(() => new Promise((res) => { resolveSecond = res; }));
+  it('16. AbortController hủy request cũ khi đổi option nhanh', async () => {
+    const abortedSignals: boolean[] = [];
+    (checkCartAvailability as jest.Mock).mockImplementation((_items, signal: AbortSignal) => {
+      signal.addEventListener('abort', () => {
+        abortedSignals.push(true);
+      });
+      return new Promise(() => {}); // pending
+    });
 
     renderComponent();
     await screen.findByRole('heading', { name: mockProduct.name });
 
-    // Click Size L quickly before first resolves
     await userEvent.click(screen.getByRole('button', { name: /Size L/ }));
 
-    // Resolve second request first (Size L = 8)
-    resolveSecond!({
-      productId: mockProduct.id,
-      availableStock: 8,
-      canOrder: true,
-    });
-
-    expect(await screen.findByText('Còn tối đa 8 ly')).toBeInTheDocument();
-
-    // Resolve first request later (Size M = 25)
-    resolveFirst!({
-      productId: mockProduct.id,
-      availableStock: 25,
-      canOrder: true,
-    });
-
-    // Remains 8 ly, NOT overridden by 25
-    expect(screen.getByText('Còn tối đa 8 ly')).toBeInTheDocument();
-    expect(screen.queryByText('Còn tối đa 25 ly')).not.toBeInTheDocument();
+    expect(abortedSignals.length).toBeGreaterThan(0);
   });
 
-  it('19. unmount component an toàn mà không lỗi cập nhật state', async () => {
-    const abortSpy = jest.fn();
-    (checkProductAvailabilityApi as jest.Mock).mockImplementation((_id, _opts, signal: AbortSignal) => {
-      signal.addEventListener('abort', abortSpy);
-      return new Promise(() => {}); // never resolves
+  it('17. response thiếu preview index bị xem là không hợp lệ', async () => {
+    (checkCartAvailability as jest.Mock).mockResolvedValue({
+      canOrder: true,
+      items: [{ index: 99, productId: 'other', sizeId: 'other', requestedQuantity: 1, availableQuantity: 10, canOrder: true }],
     });
 
-    const view = renderComponent();
+    renderComponent();
     await screen.findByRole('heading', { name: mockProduct.name });
 
-    view.unmount();
-    expect(abortSpy).toHaveBeenCalled();
+    expect(await screen.findByText('Không tìm thấy thông tin tồn kho cho món này')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
+    expect(screen.getByText('Chưa xác định')).toBeInTheDocument();
   });
 
-  it('20. Cart payload không chứa stock hoặc price giả mạo ngoài contract hiện tại', async () => {
-    (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-      productId: mockProduct.id,
-      availableStock: 10,
-      canOrder: true,
-    });
+  it('18. product.isAvailable = false hiển thị "Tạm ngừng bán" và khóa đặt món', async () => {
+    const disabledProduct: ProductDetail = {
+      ...mockProduct,
+      isAvailable: false,
+    };
+    (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(disabledProduct);
 
+    renderComponent();
+    await screen.findByRole('heading', { name: disabledProduct.name });
+
+    expect(await screen.findByText('Món hiện không thể đặt.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
+    expect(screen.getByText('Tạm ngừng bán')).toBeInTheDocument();
+  });
+
+  it('19. async addItem trả true: toast và redirect khi Mua ngay', async () => {
     renderComponent();
     await screen.findByRole('heading', { name: mockProduct.name });
     await screen.findByText('Còn tối đa 10 ly');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' }));
+    const addBtn = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
+    await waitFor(() => expect(addBtn).toBeEnabled(), { timeout: 3000 });
 
-    const cartJson = JSON.parse(screen.getByTestId('cart-probe').textContent!);
-    expect(cartJson).toHaveLength(1);
-    const item = cartJson[0];
+    // Nút Thêm vào giỏ hàng
+    await userEvent.click(addBtn);
+    expect(await screen.findByText(/Đã thêm 1x Cà phê đen đá vào giỏ!/, {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
 
-    expect(item).toMatchObject({
-      productId: mockProduct.id,
-      name: mockProduct.name,
-      basePrice: mockProduct.basePrice,
-      quantity: 1,
-      customization: {
-        size: 'size-m-id',
-        toppingIds: [],
-      },
-    });
-
-    expect(item).not.toHaveProperty('availableStock');
-    expect(item).not.toHaveProperty('stock');
-    expect(item).not.toHaveProperty('userId');
+    // Nút Mua ngay
+    const buyBtn = screen.getByRole('button', { name: 'Mua ngay' });
+    await waitFor(() => expect(buyBtn).toBeEnabled(), { timeout: 3000 });
+    await userEvent.click(buyBtn);
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/gio-hang'), { timeout: 3000 });
   });
 
-  describe('ĐỢT 4.1: FRONTEND AVAILABILITY SAFETY HARDENING', () => {
-    it('E.1 hoạt động ổn định trong React.StrictMode mà không gây lỗi hoặc loop', async () => {
-      (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-        productId: mockProduct.id,
-        availableStock: 12,
-        canOrder: true,
-      });
-
-      render(
-        <React.StrictMode>
-          <ToastProvider>
-            <CartProvider>
-              <FavoritesProvider>
-                <ApiProductDetail id={mockProduct.id} />
-                <CartProbe />
-              </FavoritesProvider>
-            </CartProvider>
-          </ToastProvider>
-        </React.StrictMode>,
-      );
-
-      await screen.findByRole('heading', { name: mockProduct.name });
-      expect(await screen.findByText('Còn tối đa 12 ly')).toBeInTheDocument();
-      expect(
-        screen.queryByText('Số lượng đã được điều chỉnh theo nguyên liệu hiện có.'),
-      ).not.toBeInTheDocument();
+  it('20. async addItem trả false: không hiển thị toast thành công và không redirect', async () => {
+    (checkCartAvailability as jest.Mock).mockResolvedValue({
+      canOrder: false,
+      items: [{ index: 0, canOrder: false, availableQuantity: 0 }],
     });
 
-    it('E.2 stock giảm từ 8 xuống 4: quantity = 4 và notice xuất hiện ổn định', async () => {
-      (checkProductAvailabilityApi as jest.Mock)
-        .mockResolvedValueOnce({
-          productId: mockProduct.id,
-          availableStock: 10,
-          canOrder: true,
-        })
-        .mockResolvedValueOnce({
-          productId: mockProduct.id,
-          availableStock: 4,
-          canOrder: true,
-        });
+    renderComponent();
+    await screen.findByRole('heading', { name: mockProduct.name });
+    await screen.findByText('Món hiện không đủ nguyên liệu');
 
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-      await screen.findByText('Còn tối đa 10 ly');
+    expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Mua ngay' })).toBeDisabled();
+    expect(screen.queryByText(/Đã thêm/)).not.toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
 
-      const input = screen.getByRole('spinbutton');
-      fireEvent.change(input, { target: { value: '8' } });
-      expect(input).toHaveValue(8);
+  it('21. không phụ thuộc legacy Inventory khi recipe availability thành công', async () => {
+    const legacyZeroProduct: ProductDetail = {
+      ...mockProduct,
+      inventory: { quantity: 0, reserved: 0, availableStock: 0 },
+      canOrder: false,
+    };
+    (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(legacyZeroProduct);
+    (checkCartAvailability as jest.Mock).mockImplementation(mockAvailabilityResponse(15, true, true));
 
-      // Đổi sang Size L (stock = 4)
-      await userEvent.click(screen.getByRole('button', { name: /Size L/ }));
+    renderComponent();
+    await screen.findByRole('heading', { name: legacyZeroProduct.name });
 
-      await waitFor(() => {
-        expect(input).toHaveValue(4);
-      });
-      expect(
-        screen.getByText('Số lượng đã được điều chỉnh theo nguyên liệu hiện có.'),
-      ).toBeInTheDocument();
+    expect(await screen.findByText('Còn tối đa 15 ly')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeEnabled();
     });
+    expect(screen.getByText('Còn món')).toBeInTheDocument();
+  });
 
-    it('E.3 stock giảm từ 8 xuống 0: quantity không trở thành 0, nút thêm giỏ disabled và không gọi addItem', async () => {
-      (checkProductAvailabilityApi as jest.Mock)
-        .mockResolvedValueOnce({
-          productId: mockProduct.id,
-          availableStock: 10,
-          canOrder: true,
-        })
-        .mockResolvedValueOnce({
-          productId: mockProduct.id,
-          availableStock: 0,
-          canOrder: false,
-        });
+  describe('computeProductBadge pure function unit tests', () => {
+    const validPreview = {
+      index: 0,
+      productId: 'p1',
+      sizeId: 's1',
+      requestedQuantity: 1,
+      availableQuantity: 5,
+      canOrder: true,
+    };
+    const validResult = { canOrder: true, items: [validPreview] };
 
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-      await screen.findByText('Còn tối đa 10 ly');
-
-      const input = screen.getByRole('spinbutton');
-      fireEvent.change(input, { target: { value: '8' } });
-      expect(input).toHaveValue(8);
-
-      // Đổi sang Size L (stock = 0)
-      await userEvent.click(screen.getByRole('button', { name: /Size L/ }));
-
-      await screen.findByText('Món hiện không đủ nguyên liệu');
-      // Invariant: quantity không bằng 0
-      expect(input).not.toHaveValue(0);
-      expect(Number(input.getAttribute('value'))).toBeGreaterThanOrEqual(1);
-
-      const addBtn = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
-      expect(addBtn).toBeDisabled();
-
-      // Click nút khi disabled
-      fireEvent.click(addBtn);
-      const cartJson = JSON.parse(screen.getByTestId('cart-probe').textContent!);
-      expect(cartJson).toHaveLength(0);
-
-      // Không hiển thị notice điều chỉnh khi stock = 0
+    it('returns "Tạm ngừng bán" when isAvailable = false', () => {
       expect(
-        screen.queryByText('Số lượng đã được điều chỉnh theo nguyên liệu hiện có.'),
-      ).not.toBeInTheDocument();
-    });
-
-    it('E.4 Availability API lỗi sau khi chọn SIZE: dù legacy stock > 0 nút thêm giỏ vẫn disabled và addItem không được gọi', async () => {
-      const productWithLegacyStock: ProductDetail = {
-        ...mockProduct,
-        inventory: { quantity: 10, reserved: 0, availableStock: 10 },
-      };
-      (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(productWithLegacyStock);
-      (checkProductAvailabilityApi as jest.Mock).mockRejectedValue(
-        new ProductApiError('Lỗi máy chủ kiểm tra availability', 500),
-      );
-
-      renderComponent();
-      await screen.findByRole('heading', { name: productWithLegacyStock.name });
-
-      // Hiển thị thông báo lỗi availability, KHÔNG dùng legacy inventory để hiển thị còn hàng
-      expect(
-        await screen.findByText('Không thể kiểm tra nguyên liệu. Vui lòng thử lại.'),
-      ).toBeInTheDocument();
-      expect(screen.queryByText(/Còn 10 ly có thể đặt/)).not.toBeInTheDocument();
-
-      const addBtn = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
-      expect(addBtn).toBeDisabled();
-
-      // Cố tình kích hoạt click
-      fireEvent.click(addBtn);
-      const cartJson = JSON.parse(screen.getByTestId('cart-probe').textContent!);
-      expect(cartJson).toHaveLength(0);
-    });
-
-    it('E.5 Availability đang loading: dù legacy stock > 0 không được thêm vào giỏ', async () => {
-      const productWithLegacyStock: ProductDetail = {
-        ...mockProduct,
-        inventory: { quantity: 10, reserved: 0, availableStock: 10 },
-      };
-      (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(productWithLegacyStock);
-      let resolveApi: (val: any) => void;
-      (checkProductAvailabilityApi as jest.Mock).mockReturnValue(
-        new Promise((res) => {
-          resolveApi = res;
+        computeProductBadge({
+          isAvailable: false,
+          isSizeSelected: true,
+          isLoading: false,
+          error: null,
+          availabilityResult: validResult,
+          previewAvailability: validPreview,
         }),
-      );
-
-      renderComponent();
-      await screen.findByRole('heading', { name: productWithLegacyStock.name });
-
-      expect(screen.getByText('Đang kiểm tra nguyên liệu...')).toBeInTheDocument();
-      const addBtn = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
-      expect(addBtn).toBeDisabled();
-
-      // Cố tình click khi đang loading
-      fireEvent.click(addBtn);
-      const cartJson = JSON.parse(screen.getByTestId('cart-probe').textContent!);
-      expect(cartJson).toHaveLength(0);
-
-      // Giải phóng API
-      resolveApi!({
-        productId: mockProduct.id,
-        availableStock: 5,
-        canOrder: true,
-      });
-      expect(await screen.findByText('Còn tối đa 5 ly')).toBeInTheDocument();
-      expect(addBtn).toBeEnabled();
+      ).toBe('Tạm ngừng bán');
     });
 
-    it('E.6 Retry thành công: availability mới trở thành nguồn quyết định và cho phép thêm vào giỏ', async () => {
-      (checkProductAvailabilityApi as jest.Mock)
-        .mockRejectedValueOnce(new ProductApiError('Lỗi kết nối', 500))
-        .mockResolvedValueOnce({
-          productId: mockProduct.id,
-          availableStock: 7,
-          canOrder: true,
-        });
-
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-
-      const retryBtn = await screen.findByRole('button', { name: 'Thử lại' });
-      expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
-
-      await userEvent.click(retryBtn);
-
-      expect(await screen.findByText('Còn tối đa 7 ly')).toBeInTheDocument();
-      const addBtn = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
-      expect(addBtn).toBeEnabled();
-
-      await userEvent.click(addBtn);
-      const cartJson = JSON.parse(screen.getByTestId('cart-probe').textContent!);
-      expect(cartJson).toHaveLength(1);
-      expect(cartJson[0]).toMatchObject({
-        productId: mockProduct.id,
-        quantity: 1,
-      });
-    });
-
-    it('E.7 Input quantity: rỗng, NaN, 0, âm, vượt availableStock đều giữ invariant quantity >= 1', async () => {
-      (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-        productId: mockProduct.id,
-        availableStock: 6,
-        canOrder: true,
-      });
-
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-      await screen.findByText('Còn tối đa 6 ly');
-
-      const input = screen.getByRole('spinbutton');
-
-      // 1. Nhập rỗng -> fallback về 1
-      fireEvent.change(input, { target: { value: '' } });
-      expect(input).toHaveValue(1);
-
-      // 2. Nhập số 0 -> fallback về 1
-      fireEvent.change(input, { target: { value: '0' } });
-      expect(input).toHaveValue(1);
-
-      // 3. Nhập số âm -> fallback về 1
-      fireEvent.change(input, { target: { value: '-5' } });
-      expect(input).toHaveValue(1);
-
-      // 4. Nhập chữ cái (NaN) -> fallback về 1
-      fireEvent.change(input, { target: { value: 'abc' } });
-      expect(input).toHaveValue(1);
-
-      // 5. Nhập vượt quá availableStock (6) -> clamp về 6
-      fireEvent.change(input, { target: { value: '20' } });
-      expect(input).toHaveValue(6);
-
-      // Luôn là số nguyên >= 1
-      expect(Number(input.getAttribute('value'))).toBeGreaterThanOrEqual(1);
-    });
-
-    it('E.8 Double-click hoặc gọi handler khi disabled không tạo CartItem sai', async () => {
-      (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-        productId: mockProduct.id,
-        availableStock: 0,
-        canOrder: false,
-      });
-
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-      await screen.findByText('Món hiện không đủ nguyên liệu');
-
-      const addBtn = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
-      expect(addBtn).toBeDisabled();
-
-      // Double click nhanh vào button disabled
-      fireEvent.click(addBtn);
-      fireEvent.click(addBtn);
-
-      const cartJson = JSON.parse(screen.getByTestId('cart-probe').textContent!);
-      expect(cartJson).toHaveLength(0);
-    });
-  });
-
-  describe('ĐỢT 4.2: REMOVE FINAL LEGACY INVENTORY GATE', () => {
-    it('B.1 Legacy báo hết nhưng công thức còn: UI hiển thị còn tối đa 12 ly, enable nút thêm và nhận đúng item trong cart', async () => {
-      const productLegacyOutOfStock: ProductDetail = {
-        ...mockProduct,
-        isAvailable: true,
-        canOrder: false, // Legacy inventory marks as out of stock
-        inventory: { quantity: 0, reserved: 0, availableStock: 0 },
-      };
-      (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(productLegacyOutOfStock);
-      (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-        productId: mockProduct.id,
-        availableStock: 12,
-        canOrder: true,
-      });
-
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-
-      // UI hiển thị số ly theo công thức nguyên liệu, không bị chặn bởi legacy canOrder
-      expect(await screen.findByText('Còn tối đa 12 ly')).toBeInTheDocument();
-
-      const addBtn = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
-      expect(addBtn).toBeEnabled();
-
-      // Thêm quantity hợp lệ
-      const input = screen.getByRole('spinbutton');
-      fireEvent.change(input, { target: { value: '2' } });
-      expect(input).toHaveValue(2);
-
-      await userEvent.click(addBtn);
-
-      const cartJson = JSON.parse(screen.getByTestId('cart-probe').textContent!);
-      expect(cartJson).toHaveLength(1);
-      expect(cartJson[0]).toMatchObject({
-        productId: mockProduct.id,
-        name: mockProduct.name,
-        quantity: 2,
-        customization: {
-          size: 'size-m-id',
-          toppingIds: [],
-        },
-      });
-    });
-
-    it('B.2 Legacy báo còn nhưng công thức hết: không được thêm vào giỏ', async () => {
-      const productLegacyInStock: ProductDetail = {
-        ...mockProduct,
-        isAvailable: true,
-        canOrder: true,
-        inventory: { quantity: 100, reserved: 0, availableStock: 100 }, // Legacy claims 100
-      };
-      (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(productLegacyInStock);
-      (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-        productId: mockProduct.id,
-        availableStock: 0, // Recipe availability reveals 0
-        canOrder: false,
-      });
-
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-
-      expect(await screen.findByText('Món hiện không đủ nguyên liệu')).toBeInTheDocument();
-
-      const addBtn = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
-      expect(addBtn).toBeDisabled();
-
-      fireEvent.click(addBtn);
-      const cartJson = JSON.parse(screen.getByTestId('cart-probe').textContent!);
-      expect(cartJson).toHaveLength(0);
-    });
-
-    it('B.3 Product bị khóa kinh doanh: product.isAvailable = false vẫn là công tắc kinh doanh hợp lệ chặn đặt món', async () => {
-      const productBusinessDisabled: ProductDetail = {
-        ...mockProduct,
-        isAvailable: false, // Business toggle OFF
-        canOrder: true,
-        inventory: { quantity: 50, reserved: 0, availableStock: 50 },
-      };
-      (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(productBusinessDisabled);
-      (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-        productId: mockProduct.id,
-        availableStock: 20,
-        canOrder: true,
-      });
-
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-
-      expect(screen.getByText('Món hiện không thể đặt.')).toBeInTheDocument();
-
-      const addBtn = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
-      expect(addBtn).toBeDisabled();
-
-      fireEvent.click(addBtn);
-      const cartJson = JSON.parse(screen.getByTestId('cart-probe').textContent!);
-      expect(cartJson).toHaveLength(0);
-    });
-
-    it('B.4 Availability lỗi: dù legacy stock và product.canOrder đều báo còn, vẫn không được thêm vào giỏ', async () => {
-      const productLegacyAvailable: ProductDetail = {
-        ...mockProduct,
-        isAvailable: true,
-        canOrder: true,
-        inventory: { quantity: 50, reserved: 0, availableStock: 50 },
-      };
-      (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(productLegacyAvailable);
-      (checkProductAvailabilityApi as jest.Mock).mockRejectedValue(
-        new ProductApiError('Lỗi server', 500),
-      );
-
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-
+    it('returns "Chọn kích cỡ" when isSizeSelected = false', () => {
       expect(
-        await screen.findByText('Không thể kiểm tra nguyên liệu. Vui lòng thử lại.'),
-      ).toBeInTheDocument();
-
-      const addBtn = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
-      expect(addBtn).toBeDisabled();
-
-      fireEvent.click(addBtn);
-      const cartJson = JSON.parse(screen.getByTestId('cart-probe').textContent!);
-      expect(cartJson).toHaveLength(0);
+        computeProductBadge({
+          isAvailable: true,
+          isSizeSelected: false,
+          isLoading: false,
+          error: null,
+          availabilityResult: null,
+          previewAvailability: null,
+        }),
+      ).toBe('Chọn kích cỡ');
     });
 
-    it('B.5 Availability loading: dù legacy stock và product.canOrder đều báo còn, vẫn không được thêm vào giỏ', async () => {
-      const productLegacyAvailable: ProductDetail = {
-        ...mockProduct,
-        isAvailable: true,
-        canOrder: true,
-        inventory: { quantity: 50, reserved: 0, availableStock: 50 },
-      };
-      (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(productLegacyAvailable);
-      (checkProductAvailabilityApi as jest.Mock).mockReturnValue(
-        new Promise(() => {}), // keeps loading
-      );
-
-      renderComponent();
-      await screen.findByRole('heading', { name: productLegacyAvailable.name });
-
-      expect(screen.getByText('Đang kiểm tra nguyên liệu...')).toBeInTheDocument();
-
-      const addBtn = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
-      expect(addBtn).toBeDisabled();
-
-      fireEvent.click(addBtn);
-      const cartJson = JSON.parse(screen.getByTestId('cart-probe').textContent!);
-      expect(cartJson).toHaveLength(0);
-    });
-
-    it('B.6 Chưa chọn SIZE: không dùng availability và không được thêm vào giỏ', async () => {
-      const productWithoutPreselectedSize: ProductDetail = {
-        ...mockProduct,
-        options: [
-          { id: 'top-1', type: 'TOPPING', name: 'Trân châu', extraPrice: 5000 },
-        ],
-      };
-      (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(productWithoutPreselectedSize);
-
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-
-      expect(checkProductAvailabilityApi).not.toHaveBeenCalled();
+    it('returns "Đang kiểm tra" when isLoading = true', () => {
       expect(
-        screen.getByText('Chọn kích cỡ để xem số lượng có thể đặt'),
-      ).toBeInTheDocument();
-
-      const addBtn = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
-      expect(addBtn).toBeDisabled();
-
-      fireEvent.click(addBtn);
-      const cartJson = JSON.parse(screen.getByTestId('cart-probe').textContent!);
-      expect(cartJson).toHaveLength(0);
+        computeProductBadge({
+          isAvailable: true,
+          isSizeSelected: true,
+          isLoading: true,
+          error: null,
+          availabilityResult: null,
+          previewAvailability: null,
+        }),
+      ).toBe('Đang kiểm tra');
     });
 
-    it('B.7 Kiểm tra handler guard: gọi handler trực tiếp không tạo CartItem khi canAddToCart = false', async () => {
-      (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-        productId: mockProduct.id,
-        availableStock: 0,
-        canOrder: false,
-      });
-
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-
-      const addBtn = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
-      const buyBtn = screen.getByRole('button', { name: 'Mua ngay' });
-      expect(addBtn).toBeDisabled();
-      expect(buyBtn).toBeDisabled();
-
-      // Kích hoạt handler trực tiếp
-      fireEvent.click(addBtn);
-      fireEvent.click(buyBtn);
-
-      const cartJson = JSON.parse(screen.getByTestId('cart-probe').textContent!);
-      expect(cartJson).toHaveLength(0);
-    });
-  });
-
-  describe('ĐỢT 4.3: AVAILABILITY BADGE STATE CORRECTION', () => {
-    it('1. Chưa chọn SIZE: badge hiển thị trạng thái trung lập "Chọn kích cỡ", không hiển thị "Còn món"', async () => {
-      const productNoSize: ProductDetail = {
-        ...mockProduct,
-        options: [
-          { id: 'top-1', type: 'TOPPING', name: 'Trân châu', extraPrice: 5000 },
-        ],
-      };
-      (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(productNoSize);
-
-      renderComponent();
-      await screen.findByRole('heading', { name: productNoSize.name });
-
-      expect(screen.getByText('Chọn kích cỡ')).toBeInTheDocument();
-      expect(screen.queryByText('Còn món')).not.toBeInTheDocument();
+    it('returns "Chưa xác định" when error !== null', () => {
+      expect(
+        computeProductBadge({
+          isAvailable: true,
+          isSizeSelected: true,
+          isLoading: false,
+          error: new Error('Network fault'),
+          availabilityResult: null,
+          previewAvailability: null,
+        }),
+      ).toBe('Chưa xác định');
     });
 
-    it('2. Đang loading: badge hiển thị "Đang kiểm tra", không hiển thị "Còn món" hoặc "Tạm hết món"', async () => {
-      (checkProductAvailabilityApi as jest.Mock).mockReturnValue(
-        new Promise(() => {}), // keeps loading
-      );
-
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-
-      expect(screen.getByText('Đang kiểm tra')).toBeInTheDocument();
-      expect(screen.queryByText('Còn món')).not.toBeInTheDocument();
-      expect(screen.queryByText('Tạm hết món')).not.toBeInTheDocument();
+    it('returns "Chưa xác định" when availabilityResult exists but previewAvailability is missing', () => {
+      expect(
+        computeProductBadge({
+          isAvailable: true,
+          isSizeSelected: true,
+          isLoading: false,
+          error: null,
+          availabilityResult: { canOrder: true, items: [] },
+          previewAvailability: null,
+        }),
+      ).toBe('Chưa xác định');
     });
 
-    it('3. API error: badge hiển thị "Chưa xác định", không hiển thị "Còn món", add to cart disabled', async () => {
-      (checkProductAvailabilityApi as jest.Mock).mockRejectedValue(
-        new ProductApiError('Lỗi server', 500),
-      );
-
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-
-      expect(await screen.findByText('Chưa xác định')).toBeInTheDocument();
-      expect(screen.queryByText('Còn món')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
+    it('returns "Còn món" when preview canOrder & stock > 0 & overall canOrder = true', () => {
+      expect(
+        computeProductBadge({
+          isAvailable: true,
+          isSizeSelected: true,
+          isLoading: false,
+          error: null,
+          availabilityResult: validResult,
+          previewAvailability: validPreview,
+        }),
+      ).toBe('Còn món');
     });
 
-    it('4. Recipe còn hàng: badge hiển thị "Còn món"', async () => {
-      (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-        productId: mockProduct.id,
-        availableStock: 25,
-        canOrder: true,
-      });
-
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-
-      expect(await screen.findByText('Còn món')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeEnabled();
+    it('returns "Tạm hết món" when availableQuantity = 0', () => {
+      const zeroPreview = { ...validPreview, availableQuantity: 0, canOrder: false };
+      expect(
+        computeProductBadge({
+          isAvailable: true,
+          isSizeSelected: true,
+          isLoading: false,
+          error: null,
+          availabilityResult: { canOrder: false, items: [zeroPreview] },
+          previewAvailability: zeroPreview,
+        }),
+      ).toBe('Tạm hết món');
     });
 
-    it('5. Recipe hết hàng: badge hiển thị "Tạm hết món"', async () => {
-      (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-        productId: mockProduct.id,
-        availableStock: 0,
-        canOrder: false,
-      });
-
-      renderComponent();
-      await screen.findByRole('heading', { name: mockProduct.name });
-
-      expect(await screen.findByText('Tạm hết món')).toBeInTheDocument();
-      expect(screen.queryByText('Còn món')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
+    it('returns "Tạm hết món" when preview canOrder = false', () => {
+      const cantOrderPreview = { ...validPreview, canOrder: false };
+      expect(
+        computeProductBadge({
+          isAvailable: true,
+          isSizeSelected: true,
+          isLoading: false,
+          error: null,
+          availabilityResult: { canOrder: false, items: [cantOrderPreview] },
+          previewAvailability: cantOrderPreview,
+        }),
+      ).toBe('Tạm hết món');
     });
 
-    it('6. product.isAvailable = false nhưng recipe còn: badge hiển thị "Tạm ngừng bán", add to cart disabled', async () => {
-      const disabledProduct: ProductDetail = {
-        ...mockProduct,
-        isAvailable: false,
-      };
-      (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(disabledProduct);
-      (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-        productId: mockProduct.id,
-        availableStock: 30,
-        canOrder: true,
-      });
-
-      renderComponent();
-      await screen.findByRole('heading', { name: disabledProduct.name });
-
-      expect(await screen.findByText('Tạm ngừng bán')).toBeInTheDocument();
-      expect(screen.queryByText('Còn món')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
-    });
-
-    it('7. Legacy inventory = 0 nhưng recipe còn: sau khi API thành công vẫn hiển thị "Còn món"', async () => {
-      const legacyZeroProduct: ProductDetail = {
-        ...mockProduct,
-        inventory: { quantity: 0, reserved: 0, availableStock: 0 },
-        canOrder: false,
-      };
-      (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(legacyZeroProduct);
-      (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-        productId: mockProduct.id,
-        availableStock: 15,
-        canOrder: true,
-      });
-
-      renderComponent();
-      await screen.findByRole('heading', { name: legacyZeroProduct.name });
-
-      expect(await screen.findByText('Còn món')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeEnabled();
-    });
-
-    it('8. Legacy inventory > 0 nhưng recipe hết: hiển thị "Tạm hết món"', async () => {
-      const legacyHighProduct: ProductDetail = {
-        ...mockProduct,
-        inventory: { quantity: 999, reserved: 0, availableStock: 999 },
-        canOrder: true,
-      };
-      (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(legacyHighProduct);
-      (checkProductAvailabilityApi as jest.Mock).mockResolvedValue({
-        productId: mockProduct.id,
-        availableStock: 0,
-        canOrder: false,
-      });
-
-      renderComponent();
-      await screen.findByRole('heading', { name: legacyHighProduct.name });
-
-      expect(await screen.findByText('Tạm hết món')).toBeInTheDocument();
-      expect(screen.queryByText('Còn món')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
-    });
-
-    it('9. computeProductBadge pure function unit tests', () => {
-      // 1. isAvailable = false
-      expect(computeProductBadge({
-        isAvailable: false,
-        isSizeSelected: true,
-        isLoading: false,
-        error: null,
-        availability: { productId: '1', availableStock: 10, canOrder: true },
-      })).toBe('Tạm ngừng bán');
-
-      // 2. isSizeSelected = false
-      expect(computeProductBadge({
-        isAvailable: true,
-        isSizeSelected: false,
-        isLoading: false,
-        error: null,
-        availability: null,
-      })).toBe('Chọn kích cỡ');
-
-      // 3. isLoading = true
-      expect(computeProductBadge({
-        isAvailable: true,
-        isSizeSelected: true,
-        isLoading: true,
-        error: null,
-        availability: null,
-      })).toBe('Đang kiểm tra');
-
-      // 4. error !== null
-      expect(computeProductBadge({
-        isAvailable: true,
-        isSizeSelected: true,
-        isLoading: false,
-        error: new Error('Network error'),
-        availability: null,
-      })).toBe('Chưa xác định');
-
-      // 5. availability canOrder & stock > 0
-      expect(computeProductBadge({
-        isAvailable: true,
-        isSizeSelected: true,
-        isLoading: false,
-        error: null,
-        availability: { productId: '1', availableStock: 5, canOrder: true },
-      })).toBe('Còn món');
-
-      // 6. availability stock = 0
-      expect(computeProductBadge({
-        isAvailable: true,
-        isSizeSelected: true,
-        isLoading: false,
-        error: null,
-        availability: { productId: '1', availableStock: 0, canOrder: true },
-      })).toBe('Tạm hết món');
-
-      // 7. availability canOrder = false
-      expect(computeProductBadge({
-        isAvailable: true,
-        isSizeSelected: true,
-        isLoading: false,
-        error: null,
-        availability: { productId: '1', availableStock: 5, canOrder: false },
-      })).toBe('Tạm hết món');
+    it('returns "Tạm hết món" when overall canOrder = false', () => {
+      expect(
+        computeProductBadge({
+          isAvailable: true,
+          isSizeSelected: true,
+          isLoading: false,
+          error: null,
+          availabilityResult: { canOrder: false, items: [validPreview] },
+          previewAvailability: validPreview,
+        }),
+      ).toBe('Tạm hết món');
     });
   });
 });

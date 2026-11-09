@@ -4,11 +4,13 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  checkCartAvailability,
   fetchProductDetailFromApi,
-  checkProductAvailabilityApi,
   ProductApiError,
+  AvailabilityResult,
+  AvailabilityItemResult,
 } from '../../services/product-api';
-import { ProductDetail, ProductAvailabilityResponse } from '../../types/product';
+import { ProductDetail } from '../../types/product';
 import { DrinkCustomization } from '../../types/menu';
 import { DEFAULT_CUSTOMIZATION } from '../../data/menu-options';
 import { calcUnitPrice } from '../../lib/pricing';
@@ -23,37 +25,43 @@ export function computeProductBadge({
   isSizeSelected,
   isLoading,
   error,
-  availability,
+  availabilityResult,
+  previewAvailability,
 }: {
   isAvailable: boolean;
   isSizeSelected: boolean;
   isLoading: boolean;
   error: Error | null;
-  availability: ProductAvailabilityResponse | null;
+  availabilityResult: AvailabilityResult | null;
+  previewAvailability: AvailabilityItemResult | null;
 }): string {
   // 1. product.isAvailable === false: Tạm ngừng bán (ưu tiên hàng đầu)
   if (!isAvailable) {
     return 'Tạm ngừng bán';
   }
 
-  // 5. Chưa chọn SIZE: Trạng thái trung lập, chưa khẳng định capacity theo công thức
+  // 2. Chưa chọn SIZE: Trạng thái trung lập
   if (!isSizeSelected) {
     return 'Chọn kích cỡ';
   }
 
-  // 2. availabilityLoading === true: Đang kiểm tra
+  // 3. Đang gửi request kiểm tra
   if (isLoading) {
     return 'Đang kiểm tra';
   }
 
-  // 3. availabilityError !== null: Chưa xác định
-  if (error !== null) {
+  // 4. Có lỗi request hoặc không tìm thấy preview availability trong response
+  if (error !== null || (availabilityResult !== null && previewAvailability === null)) {
     return 'Chưa xác định';
   }
 
-  // 4. Availability thành công
-  if (availability) {
-    if (availability.canOrder && availability.availableStock > 0) {
+  // 5. Availability thành công
+  if (availabilityResult && previewAvailability) {
+    if (
+      availabilityResult.canOrder &&
+      previewAvailability.canOrder &&
+      previewAvailability.availableQuantity > 0
+    ) {
       return 'Còn món';
     }
     return 'Tạm hết món';
@@ -67,27 +75,60 @@ export function ApiProductDetail({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ProductApiError | null>(null);
   const [attempt, setAttempt] = useState(0);
+
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
     setProduct(null);
     fetchProductDetailFromApi(id, controller.signal)
-      .then((data) => { if (!controller.signal.aborted) setProduct(data); })
-      .catch((err: ProductApiError) => { if (!controller.signal.aborted) setError(err); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+      .then((data) => {
+        if (!controller.signal.aborted) setProduct(data);
+      })
+      .catch((err: ProductApiError) => {
+        if (!controller.signal.aborted) setError(err);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
     return () => controller.abort();
   }, [id, attempt]);
 
-  return <div className="max-w-[1200px] mx-auto w-full px-margin md:px-margin-lg py-space-lg">
-    <nav aria-label="Breadcrumb" className="mb-6"><Link href="/thuc-don" className="text-secondary underline">Thực đơn</Link>{product && ` / ${product.name}`}</nav>
-    {loading ? <div role="status" className="animate-pulse rounded-xl bg-surface-container p-12">Đang tải thông tin món...</div>
-      : error ? <div role="alert" className="text-center py-12">
-        <h1 className="font-display text-headline-sm">{error.statusCode === 404 || error.statusCode === 400 ? 'Không tìm thấy món' : 'Không thể tải thông tin món'}</h1>
-        <p className="mt-3">{error.message}</p>
-        <button className="mt-4 px-6 py-3 rounded-full bg-primary text-on-primary" onClick={() => setAttempt((n) => n + 1)}>Thử lại</button>
-      </div> : product && <ProductContent key={product.id} product={product} />}
-  </div>;
+  return (
+    <div className="max-w-[1200px] mx-auto w-full px-margin md:px-margin-lg py-space-lg">
+      <nav aria-label="Breadcrumb" className="mb-6">
+        <Link href="/products" className="text-secondary underline">
+          Thực đơn
+        </Link>
+        {product && ` / ${product.name}`}
+      </nav>
+      {loading ? (
+        <div
+          role="status"
+          className="animate-pulse rounded-xl bg-surface-container p-12"
+        >
+          Đang tải thông tin món...
+        </div>
+      ) : error ? (
+        <div role="alert" className="text-center py-12">
+          <h1 className="font-display text-headline-sm">
+            {error.statusCode === 404 || error.statusCode === 400
+              ? 'Không tìm thấy món'
+              : 'Không thể tải thông tin món'}
+          </h1>
+          <p className="mt-3">{error.message}</p>
+          <button
+            className="mt-4 px-6 py-3 rounded-full bg-primary text-on-primary"
+            onClick={() => setAttempt((n) => n + 1)}
+          >
+            Thử lại
+          </button>
+        </div>
+      ) : (
+        product && <ProductContent key={product.id} product={product} />
+      )}
+    </div>
+  );
 }
 
 function ProductContent({ product }: { product: ProductDetail }) {
@@ -101,21 +142,23 @@ function ProductContent({ product }: { product: ProductDetail }) {
   const [quantity, setQuantity] = useState(1);
   const [quantityAdjustNotice, setQuantityAdjustNotice] = useState<string | null>(null);
 
-  // Availability state
-  const [availability, setAvailability] = useState<ProductAvailabilityResponse | null>(null);
+  // Availability state (Cart-aware)
+  const [availabilityResult, setAvailabilityResult] = useState<AvailabilityResult | null>(null);
+  const [previewAvailability, setPreviewAvailability] = useState<AvailabilityItemResult | null>(null);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilityError, setAvailabilityError] = useState<ProductApiError | null>(null);
   const [availabilityAttempt, setAvailabilityAttempt] = useState(0);
 
-  const { addItem } = useCart();
+  const { addItem, items, isChecking } = useCart();
   const { showToast } = useToast();
   const { isFavorite, toggleFavorite } = useFavorites();
   const router = useRouter();
 
   useEffect(() => {
-    // 1. Khi chưa có đúng một SIZE: Không gọi API, reset availability
+    // 1. Khi chưa có đúng một SIZE: Không gọi API, reset availability state
     if (!customization.size) {
-      setAvailability(null);
+      setAvailabilityResult(null);
+      setPreviewAvailability(null);
       setAvailabilityLoading(false);
       setAvailabilityError(null);
       return;
@@ -125,16 +168,37 @@ function ProductContent({ product }: { product: ProductDetail }) {
     setAvailabilityLoading(true);
     setAvailabilityError(null);
 
-    const selectedOptions = [customization.size, ...customization.toppingIds];
+    // Gửi toàn bộ giỏ hàng hiện có + dòng preview hiện tại
+    const previewItems = [
+      ...items,
+      {
+        productId: product.id,
+        customization,
+        quantity,
+      },
+    ];
 
-    checkProductAvailabilityApi(product.id, selectedOptions, controller.signal)
-      .then((data) => {
+    const previewIndex = previewItems.length - 1;
+
+    checkCartAvailability(previewItems, controller.signal)
+      .then((res) => {
         if (!controller.signal.aborted) {
-          setAvailability(data);
+          setAvailabilityResult(res);
+          const found = res.items.find((it) => it.index === previewIndex);
+          if (found) {
+            setPreviewAvailability(found);
+          } else {
+            setPreviewAvailability(null);
+            setAvailabilityError(
+              new ProductApiError('Không tìm thấy thông tin tồn kho cho món này', 500),
+            );
+          }
         }
       })
       .catch((err) => {
         if (!controller.signal.aborted) {
+          setAvailabilityResult(null);
+          setPreviewAvailability(null);
           setAvailabilityError(err);
         }
       })
@@ -147,50 +211,54 @@ function ProductContent({ product }: { product: ProductDetail }) {
     return () => {
       controller.abort();
     };
-  }, [product.id, customization.size, customization.toppingIds, availabilityAttempt]);
+  }, [
+    product.id,
+    customization.size,
+    customization.toppingIds,
+    quantity,
+    items,
+    availabilityAttempt,
+  ]);
 
-  // A & B: Hiệu chỉnh quantity khi availability cập nhật thành công (không lồng setState trong updater)
+  // Hiệu chỉnh quantity khi availability cập nhật thành công (bảo toàn invariant quantity >= 1)
   useEffect(() => {
-    if (!availability) return;
-    const stock = availability.availableStock;
-    // B. Invariant quantity >= 1: availableStock = 0 không được làm quantity = 0
+    if (!previewAvailability) return;
+    const stock = previewAvailability.availableQuantity;
     if (stock > 0 && quantity > stock) {
       setQuantity(stock);
       setQuantityAdjustNotice('Số lượng đã được điều chỉnh theo nguyên liệu hiện có.');
     }
-  }, [availability, quantity]);
+  }, [previewAvailability, quantity]);
 
   const isSizeSelected = Boolean(customization.size && customization.size.trim().length > 0);
 
-  // Khi đã chọn SIZE: Availability API là nguồn quyết định DUY NHẤT
   const isAvailabilityReady =
     isSizeSelected &&
     !availabilityLoading &&
     availabilityError === null &&
-    availability !== null;
-
-  const effectiveStock = isSizeSelected
-    ? (isAvailabilityReady && availability ? availability.availableStock : 0)
-    : (product.inventory?.availableStock ?? 0);
+    availabilityResult !== null &&
+    previewAvailability !== null;
 
   const canAddToCart = Boolean(
     product &&
     product.isAvailable &&
     isSizeSelected &&
     isAvailabilityReady &&
-    availability &&
-    availability.canOrder === true &&
-    availability.availableStock > 0 &&
+    previewAvailability &&
+    previewAvailability.canOrder === true &&
+    previewAvailability.availableQuantity > 0 &&
+    availabilityResult &&
+    availabilityResult.canOrder === true &&
     quantity >= 1 &&
-    quantity <= availability.availableStock,
+    quantity <= previewAvailability.availableQuantity &&
+    !isChecking,
   );
 
   const total = calcUnitPrice(product.basePrice, customization, product.options) * quantity;
 
-  const add = (buyNow: boolean) => {
-    // Guard chặt chẽ: không thể bypass qua double-click hoặc gọi handler trực tiếp khi disabled
+  const add = async (buyNow: boolean) => {
     if (!canAddToCart) return;
-    addItem({
+    const added = await addItem({
       productId: product.id,
       name: product.name,
       imageUrl: product.imageUrl,
@@ -199,6 +267,7 @@ function ProductContent({ product }: { product: ProductDetail }) {
       customization,
       quantity,
     });
+    if (!added) return;
     showToast(`Đã thêm ${quantity}x ${product.name} vào giỏ!`);
     if (buyNow) router.push('/gio-hang');
   };
@@ -224,10 +293,12 @@ function ProductContent({ product }: { product: ProductDetail }) {
       );
     }
 
-    if (availabilityError) {
+    if (availabilityError || (availabilityResult && !previewAvailability)) {
       return (
         <div role="alert" className="flex items-center gap-3 text-error">
-          <span className="font-medium">Không thể kiểm tra nguyên liệu. Vui lòng thử lại.</span>
+          <span className="font-medium">
+            {availabilityError?.message || 'Không thể kiểm tra nguyên liệu. Vui lòng thử lại.'}
+          </span>
           <button
             type="button"
             onClick={() => setAvailabilityAttempt((n) => n + 1)}
@@ -239,13 +310,17 @@ function ProductContent({ product }: { product: ProductDetail }) {
       );
     }
 
-    if (availability) {
-      if (availability.availableStock === 0 || !availability.canOrder) {
+    if (availabilityResult && previewAvailability) {
+      if (
+        previewAvailability.availableQuantity === 0 ||
+        !previewAvailability.canOrder ||
+        !availabilityResult.canOrder
+      ) {
         return <p className="text-error font-medium">Món hiện không đủ nguyên liệu</p>;
       }
       return (
         <p className="text-on-surface-variant font-medium">
-          Còn tối đa {availability.availableStock} ly
+          Còn tối đa {previewAvailability.availableQuantity} ly
         </p>
       );
     }
@@ -258,7 +333,8 @@ function ProductContent({ product }: { product: ProductDetail }) {
     isSizeSelected,
     isLoading: availabilityLoading,
     error: availabilityError,
-    availability,
+    availabilityResult,
+    previewAvailability,
   });
 
   return (
@@ -350,8 +426,12 @@ function ProductContent({ product }: { product: ProductDetail }) {
             aria-label="Số lượng"
             type="number"
             min={1}
-            max={effectiveStock > 0 ? Math.min(99, effectiveStock) : 1}
-            disabled={!isAvailabilityReady || effectiveStock === 0}
+            max={
+              previewAvailability && previewAvailability.availableQuantity > 0
+                ? Math.min(99, previewAvailability.availableQuantity)
+                : 1
+            }
+            disabled={!isAvailabilityReady || (previewAvailability && previewAvailability.availableQuantity === 0)}
             value={quantity}
             onChange={(e) => {
               setQuantityAdjustNotice(null);
@@ -365,7 +445,10 @@ function ProductContent({ product }: { product: ProductDetail }) {
                 setQuantity(1);
                 return;
               }
-              const safeMax = effectiveStock > 0 ? Math.min(99, effectiveStock) : 1;
+              const safeMax =
+                previewAvailability && previewAvailability.availableQuantity > 0
+                  ? Math.min(99, previewAvailability.availableQuantity)
+                  : 1;
               const clamped = Math.min(parsed, safeMax);
               setQuantity(Math.max(1, clamped));
             }}

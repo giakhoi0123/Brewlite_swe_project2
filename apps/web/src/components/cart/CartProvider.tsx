@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   addCartItem,
   CartItem,
@@ -10,6 +10,7 @@ import {
   sanitizeCartItems,
   setLineQuantity,
 } from '../../lib/cart';
+import { checkCartAvailability } from '../../services/product-api';
 import { SizeCode } from '../../types/menu';
 
 export type { CartItem } from '../../lib/cart';
@@ -17,13 +18,16 @@ export type { CartItem } from '../../lib/cart';
 interface CartContextValue {
   /** false cho tới khi đọc xong localStorage — tránh nháy "giỏ trống". */
   isReady: boolean;
+  stockError: string | null;
+  isChecking: boolean;
+  canCheckout: boolean;
   items: CartItem[];
   totalQuantity: number;
   totalPrice: number;
   voucherCode: string | null;
-  addItem: (item: NewCartItem) => void;
-  updateQuantity: (lineId: string, quantity: number) => void;
-  updateSize: (lineId: string, size: SizeCode) => void;
+  addItem: (item: NewCartItem) => Promise<boolean>;
+  updateQuantity: (lineId: string, quantity: number) => Promise<boolean>;
+  updateSize: (lineId: string, size: SizeCode) => Promise<boolean>;
   removeItem: (lineId: string) => void;
   clearCart: () => void;
   setVoucherCode: (code: string | null) => void;
@@ -69,24 +73,91 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [items, voucherCode, hydrated]);
 
-  const addItem = useCallback((item: NewCartItem) => setItems((prev) => addCartItem(prev, item)), []);
-  const updateQuantity = useCallback(
-    (lineId: string, quantity: number) => setItems((prev) => setLineQuantity(prev, lineId, quantity)),
-    [],
-  );
-  const updateSize = useCallback(
-    (lineId: string, size: SizeCode) => setItems((prev) => changeLineSize(prev, lineId, size)),
-    [],
-  );
-  const removeItem = useCallback((lineId: string) => setItems((prev) => removeLine(prev, lineId)), []);
-  const clearCart = useCallback(() => {
-    setItems([]);
-    setVoucherCode(null);
+  const [stockError, setStockError] = useState<string | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+  const [canCheckout, setCanCheckout] = useState(false);
+  const currentItems = useRef(items);
+  const confirmedItems = useRef(items);
+  const revision = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingResolve = useRef<((accepted: boolean) => void) | null>(null);
+
+  useEffect(() => {
+    currentItems.current = items;
+    if (revision.current === 0) confirmedItems.current = items;
+  }, [items]);
+
+  useEffect(() => () => {
+    revision.current += 1;
+    if (timer.current) clearTimeout(timer.current);
+    pendingResolve.current?.(false);
   }, []);
+
+  const commit = useCallback((change: (previous: CartItem[]) => CartItem[]) => {
+    const next = change(currentItems.current);
+    const requestRevision = ++revision.current;
+    if (timer.current) clearTimeout(timer.current);
+    pendingResolve.current?.(false);
+    // Update quantity, price and badge immediately; validate after a short pause.
+    currentItems.current = next;
+    setItems(next);
+    setStockError(null);
+    setIsChecking(true);
+    setCanCheckout(false);
+    return new Promise<boolean>(resolve => {
+      pendingResolve.current = resolve;
+      timer.current = setTimeout(async () => {
+        try {
+          const result = next.length ? await checkCartAvailability(next) : null;
+          if (requestRevision !== revision.current) return;
+          if (result && !result.canOrder) {
+            setStockError('Không đủ số lượng.');
+            currentItems.current = confirmedItems.current;
+            setItems(confirmedItems.current);
+            resolve(false);
+          } else {
+            confirmedItems.current = next;
+            setCanCheckout(next.length > 0);
+            resolve(true);
+          }
+        } catch (error) {
+          if (requestRevision !== revision.current) return;
+          setStockError(error instanceof Error ? error.message : 'Không thể kiểm tra tồn nguyên liệu.');
+          currentItems.current = confirmedItems.current;
+          setItems(confirmedItems.current);
+          resolve(false);
+        } finally {
+          if (requestRevision === revision.current) {
+            pendingResolve.current = null;
+            setIsChecking(false);
+          }
+        }
+      }, 250);
+    });
+  }, []);
+  useEffect(() => {
+    if (hydrated) void commit(previous => previous);
+  }, [hydrated, commit]);
+
+  const addItem = useCallback((item: NewCartItem) => commit(prev => addCartItem(prev, item)), [commit]);
+  const updateQuantity = useCallback((lineId: string, quantity: number) => commit(prev => setLineQuantity(prev, lineId, quantity)), [commit]);
+  const updateSize = useCallback((lineId: string, size: SizeCode) => commit(prev => changeLineSize(prev, lineId, size)), [commit]);
+  const removeItem = useCallback((lineId: string) => {
+    confirmedItems.current = removeLine(confirmedItems.current, lineId);
+    void commit(prev => removeLine(prev, lineId));
+  }, [commit]);
+  const clearCart = useCallback(() => {
+    confirmedItems.current = [];
+    void commit(() => []);
+    setVoucherCode(null);
+  }, [commit]);
 
   const value = useMemo<CartContextValue>(
     () => ({
       isReady: hydrated,
+      stockError,
+      isChecking,
+      canCheckout,
       items,
       totalQuantity: items.reduce((sum, line) => sum + line.quantity, 0),
       totalPrice: items.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0),
@@ -98,10 +169,10 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearCart,
       setVoucherCode,
     }),
-    [hydrated, items, voucherCode, addItem, updateQuantity, updateSize, removeItem, clearCart],
+    [canCheckout, stockError, isChecking, hydrated, items, voucherCode, addItem, updateQuantity, updateSize, removeItem, clearCart],
   );
 
-  return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
+  return <CartContext.Provider value={value}>{stockError && <div role="alert" className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] bg-error-container text-error rounded-xl p-4 shadow-lg max-w-lg">{stockError}<button type="button" className="ml-4 underline" onClick={() => setStockError(null)}>Đóng</button></div>}{children}</CartContext.Provider>;
 };
 
 export function useCart(): CartContextValue {

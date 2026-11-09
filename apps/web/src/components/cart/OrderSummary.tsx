@@ -1,13 +1,16 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 import { ArrowLeft, ArrowRight, BadgePercent, ReceiptText, Snowflake, X, Zap } from 'lucide-react';
-import { CartSummary, FREE_SHIPPING_THRESHOLD, validateVoucher } from '../../lib/cart-summary';
+import { CartSummary, FREE_SHIPPING_THRESHOLD } from '../../lib/cart-summary';
 import { formatCurrency } from '../../utils/format';
 
 interface OrderSummaryProps {
   summary: CartSummary;
+  isChecking?: boolean;
+  canCheckout?: boolean;
   onApplyVoucher: (code: string) => void;
   onRemoveVoucher: () => void;
 }
@@ -18,19 +21,46 @@ const PERKS = [
   { icon: BadgePercent, label: 'Tích điểm 5%' },
 ];
 
-export const OrderSummary: React.FC<OrderSummaryProps> = ({ summary, onApplyVoucher, onRemoveVoucher }) => {
+export const OrderSummary: React.FC<OrderSummaryProps> = ({ summary, onApplyVoucher, onRemoveVoucher, isChecking = false, canCheckout = true }) => {
+  const router = useRouter();
   const [code, setCode] = useState('');
+  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const handleApply = (e: FormEvent) => {
+  // Xử lý gọi API Validate xuống NestJS Backend
+  const handleApply = async (e: FormEvent) => {
     e.preventDefault();
-    const result = validateVoucher(code, summary.subtotal);
-    if (result.ok) {
-      onApplyVoucher(result.voucher.code);
-      setMessage({ ok: true, text: `✓ Áp dụng thành công mã ${result.voucher.code} — ${result.voucher.label}.` });
+    if (!code.trim()) return;
+
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      const res = await fetch('http://localhost:3005/api/promotions/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: code.trim().toUpperCase(),
+          orderAmount: summary.subtotal,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || 'Mã giảm giá không hợp lệ hoặc đã hết hạn.');
+      }
+
+      onApplyVoucher(data.code);
+      setMessage({
+        ok: true,
+        text: `✓ Áp dụng thành công mã ${data.code} — Giảm ${formatCurrency(data.discountAmount)}.`,
+      });
       setCode('');
-    } else {
-      setMessage({ ok: false, text: result.error });
+    } catch (err: any) {
+      setMessage({ ok: false, text: err.message || 'Mã giảm giá không hợp lệ hoặc đã hết hạn.' });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -123,9 +153,10 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({ summary, onApplyVouc
           />
           <button
             type="submit"
-            className="absolute right-1.5 px-space-md py-1.5 rounded-full bg-primary-container text-on-primary font-display text-label-md font-bold hover:bg-primary active:scale-95 transition-all"
+            disabled={loading}
+            className="absolute right-1.5 px-space-md py-1.5 rounded-full bg-primary-container text-on-primary font-display text-label-md font-bold hover:bg-primary active:scale-95 transition-all disabled:opacity-50"
           >
-            Áp dụng
+            {loading ? 'Đang check...' : 'Áp dụng'}
           </button>
         </div>
         {message && (
@@ -136,15 +167,17 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({ summary, onApplyVouc
       </form>
 
       <div className="flex flex-col gap-space-xs pt-2">
-        <Link
-          href="/thanh-toan"
-          className="group w-full py-3.5 px-space-md rounded-full bg-primary-container text-on-primary font-display text-label-lg font-bold flex items-center justify-center gap-space-xs shadow-md hover:bg-primary active:scale-[0.98] transition-all"
+        <button
+          type="button"
+          disabled={isChecking || !canCheckout}
+          onClick={() => router.push('/thanh-toan')}
+          className="group w-full py-3.5 px-space-md rounded-full bg-primary-container text-on-primary font-display text-label-lg font-bold flex items-center justify-center gap-space-xs shadow-md hover:bg-primary active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
         >
           TIẾN HÀNH ĐẶT HÀNG
           <ArrowRight className="w-[18px] h-[18px] group-hover:translate-x-1 transition-transform" />
-        </Link>
+        </button>
         <Link
-          href="/thuc-don"
+          href="/products"
           className="w-full py-2.5 rounded-full text-center text-on-surface-variant hover:text-secondary font-display text-label-md flex items-center justify-center gap-1 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />

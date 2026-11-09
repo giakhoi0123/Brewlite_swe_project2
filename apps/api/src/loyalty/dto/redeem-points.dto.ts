@@ -11,6 +11,10 @@ export class RedeemPointsDto {
 
   @IsOptional()
   @IsString()
+  rewardCode?: string;
+
+  @IsOptional()
+  @IsString()
   orderId?: string;
 
   @IsOptional()

@@ -1,3 +1,4 @@
+import { AvailabilityService } from './availability.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProductsController } from './products.controller';
 import { ProductsService } from './products.service';
@@ -6,6 +7,7 @@ import { OptionType } from '@prisma/client';
 describe('ProductsController', () => {
   let controller: ProductsController;
   let service: jest.Mocked<ProductsService>;
+  let availabilityService: jest.Mocked<AvailabilityService>;
 
   const mockProductResponse = {
     id: 'a0000000-0000-0000-0000-000000000001',
@@ -38,12 +40,19 @@ describe('ProductsController', () => {
     const mockService = {
       findAll: jest.fn(),
       findOne: jest.fn(),
-      checkAvailability: jest.fn(),
+    };
+
+    const mockAvailabilityService = {
+      check: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ProductsController],
       providers: [
+        {
+          provide: AvailabilityService,
+          useValue: mockAvailabilityService,
+        },
         {
           provide: ProductsService,
           useValue: mockService,
@@ -53,6 +62,7 @@ describe('ProductsController', () => {
 
     controller = module.get<ProductsController>(ProductsController);
     service = module.get(ProductsService);
+    availabilityService = module.get(AvailabilityService);
   });
 
   describe('getProducts', () => {
@@ -87,32 +97,38 @@ describe('ProductsController', () => {
   });
 
   describe('checkAvailability', () => {
-    const mockAvailabilityResponse = {
-      productId: 'a0000000-0000-0000-0000-000000000001',
-      availableStock: 12,
-      canOrder: true,
-    };
-
-    it('should call service.checkAvailability with productId and selectedOptions', async () => {
-      service.checkAvailability.mockResolvedValue(mockAvailabilityResponse);
-
-      const dto = {
-        selectedOptions: [
-          'b0000000-0000-0000-0000-000000000001',
-          'b0000000-0000-0000-0000-000000000003',
+    it('should delegate cart-aware availability checking to AvailabilityService', async () => {
+      const mockResult = {
+        canOrder: true,
+        items: [
+          {
+            index: 0,
+            productId: 'a0000000-0000-0000-0000-000000000001',
+            sizeId: 'b0000000-0000-0000-0000-000000000001',
+            requestedQuantity: 2,
+            availableQuantity: 10,
+            canOrder: true,
+          },
         ],
       };
 
-      const result = await controller.checkAvailability(
-        'a0000000-0000-0000-0000-000000000001',
-        dto,
-      );
+      availabilityService.check.mockResolvedValue(mockResult);
 
-      expect(service.checkAvailability).toHaveBeenCalledWith(
-        'a0000000-0000-0000-0000-000000000001',
-        dto,
-      );
-      expect(result).toEqual(mockAvailabilityResponse);
+      const dto = {
+        items: [
+          {
+            productId: 'a0000000-0000-0000-0000-000000000001',
+            sizeId: 'b0000000-0000-0000-0000-000000000001',
+            toppingIds: [],
+            quantity: 2,
+          },
+        ],
+      };
+
+      const result = await controller.checkAvailability(dto);
+
+      expect(availabilityService.check).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(mockResult);
     });
   });
 });

@@ -81,6 +81,11 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
 
     expect(persistedProduct).not.toBeNull();
 
+    // Bottleneck for Cà phê Trứng Nướng is Sữa đặc: stock 40,000g, Size M recipe 60g -> capacity = 666
+    const expectedMilkStock = 40000;
+    const sizeMMilkAmount = 60;
+    const expectedRecipeCapacity = Math.floor(expectedMilkStock / sizeMMilkAmount);
+
     const detailRes = await request(app.getHttpServer())
       .get(`/api/products/${productId}`)
       .expect(200);
@@ -93,11 +98,9 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
       isAvailable: persistedProduct!.isAvailable,
       createdAt: persistedProduct!.createdAt.toISOString(),
       inventory: {
-        quantity: persistedProduct!.inventory!.quantity,
-        reserved: persistedProduct!.inventory!.reserved,
-        availableStock:
-          persistedProduct!.inventory!.quantity -
-          persistedProduct!.inventory!.reserved,
+        quantity: expectedRecipeCapacity,
+        reserved: 0,
+        availableStock: expectedRecipeCapacity,
       },
     });
     expect(Array.isArray(detailRes.body.options)).toBe(true);

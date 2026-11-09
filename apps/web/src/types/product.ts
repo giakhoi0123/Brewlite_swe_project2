@@ -25,14 +25,3 @@ export interface ProductDetail extends Product {
   options: ProductOption[];
   inventory: ProductInventory | null;
 }
-
-export interface ProductAvailabilityRequest {
-  selectedOptions: string[];
-}
-
-export interface ProductAvailabilityResponse {
-  productId: string;
-  availableStock: number;
-  canOrder: boolean;
-}
-

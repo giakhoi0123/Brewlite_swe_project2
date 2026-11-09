@@ -35,8 +35,8 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ product, a
     (b): b is string => Boolean(b),
   );
 
-  const addToCart = (item: MenuProduct, customization: DrinkCustomization, quantity: number) => {
-    addItem({
+  const addToCart = async (item: MenuProduct, customization: DrinkCustomization, quantity: number) => {
+    const added = await addItem({
       productId: item.id,
       name: item.name,
       imageUrl: item.imageUrl,
@@ -44,7 +44,9 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ product, a
       customization: { ...customization, note: customization.note?.trim() },
       quantity,
     });
+    if (!added) return false;
     showToast(`Đã thêm ${quantity}x ${item.name} vào giỏ!`);
+    return true;
   };
 
   return (
@@ -55,7 +57,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ product, a
             <Home className="w-4 h-4" /> Trang chủ
           </Link>
           <span className="text-outline-variant">/</span>
-          <Link href={`/thuc-don?danh-muc=${product.categoryId}`} className="hover:text-primary transition-colors">
+          <Link href={`/products?danh-muc=${product.categoryId}`} className="hover:text-primary transition-colors">
             {category?.label}
           </Link>
           <span className="text-outline-variant">/</span>
@@ -85,9 +87,8 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({ product, a
               product={product}
               series={detail.series}
               onAddToCart={(customization, quantity) => addToCart(product, customization, quantity)}
-              onBuyNow={(customization, quantity) => {
-                addToCart(product, customization, quantity);
-                router.push('/gio-hang');
+              onBuyNow={async (customization, quantity) => {
+                if (await addToCart(product, customization, quantity)) router.push('/gio-hang');
               }}
               onToppingLimit={() => showToast(`Chỉ được chọn tối đa ${MAX_TOPPINGS} loại topping!`)}
             />

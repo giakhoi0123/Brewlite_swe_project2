@@ -1,26 +1,31 @@
 import {
   Controller,
-  Get,
   Post,
-  Param,
   Body,
+  Get,
+  Param,
   Query,
   ParseUUIDPipe,
   HttpStatus,
-  HttpCode,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
+import { AvailabilityService } from './availability.service';
 import { GetProductsQueryDto } from './dto/get-products-query.dto';
 import { ProductResponseDto } from './dto/product-response.dto';
 import { ProductDetailResponseDto } from './dto/product-detail-response.dto';
-import {
-  CheckProductAvailabilityDto,
-  ProductAvailabilityResponseDto,
-} from './dto/check-product-availability.dto';
+import { CheckAvailabilityDto } from './dto/check-availability.dto';
 
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly availabilityService: AvailabilityService,
+  ) {}
+
+  @Post('availability')
+  checkAvailability(@Body() body: CheckAvailabilityDto) {
+    return this.availabilityService.check(body);
+  }
 
   @Get()
   async getProducts(
@@ -40,20 +45,5 @@ export class ProductsController {
     id: string,
   ): Promise<ProductDetailResponseDto> {
     return this.productsService.findOne(id);
-  }
-
-  @Post(':id/availability')
-  @HttpCode(HttpStatus.OK)
-  async checkAvailability(
-    @Param(
-      'id',
-      new ParseUUIDPipe({
-        errorHttpStatusCode: HttpStatus.BAD_REQUEST,
-      }),
-    )
-    id: string,
-    @Body() dto: CheckProductAvailabilityDto,
-  ): Promise<ProductAvailabilityResponseDto> {
-    return this.productsService.checkAvailability(id, dto);
   }
 }

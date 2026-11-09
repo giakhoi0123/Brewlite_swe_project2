@@ -1,31 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { OptionType, Prisma, ProductOption } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 export type ProductWithInventory = Prisma.ProductGetPayload<{
-  include: { inventory: { select: { quantity: true; reserved: true } } };
+  include: {
+    inventory: { select: { quantity: true; reserved: true } };
+    options: { include: { recipes: { include: { ingredient: true } } } };
+  };
 }>;
 
-export type ProductWithDetails = ProductWithInventory & {
-  options: ProductOption[];
-};
-
-export type ProductAvailabilityQueryResult = {
-  id: string;
-  isAvailable: boolean;
-  options: {
-    id: string;
-    productId: string;
-    type: OptionType;
-    recipes: {
-      amount: Prisma.Decimal;
-      ingredient: {
-        id: string;
-        stock: Prisma.Decimal;
-      };
-    }[];
-  }[];
-};
+export type ProductWithDetails = ProductWithInventory;
 
 @Injectable()
 export class ProductsRepository {
@@ -43,7 +27,10 @@ export class ProductsRepository {
 
     return this.prisma.product.findMany({
       where: whereClause,
-      include: { inventory: { select: { quantity: true, reserved: true } } },
+      include: {
+        inventory: { select: { quantity: true, reserved: true } },
+        options: { include: { recipes: { include: { ingredient: true } } } },
+      },
       orderBy: {
         name: 'asc',
       },
@@ -55,46 +42,13 @@ export class ProductsRepository {
       where: { id },
       include: {
         options: {
+          include: { recipes: { include: { ingredient: true } } },
           orderBy: [
             { type: 'asc' },
             { extraPrice: 'asc' },
           ],
         },
         inventory: { select: { quantity: true, reserved: true } },
-      },
-    });
-  }
-
-  async findProductWithOptionsAndRecipes(
-    productId: string,
-    selectedOptionIds: string[],
-  ): Promise<ProductAvailabilityQueryResult | null> {
-    return this.prisma.product.findUnique({
-      where: { id: productId },
-      select: {
-        id: true,
-        isAvailable: true,
-        options: {
-          where: {
-            id: { in: selectedOptionIds },
-          },
-          select: {
-            id: true,
-            productId: true,
-            type: true,
-            recipes: {
-              select: {
-                amount: true,
-                ingredient: {
-                  select: {
-                    id: true,
-                    stock: true,
-                  },
-                },
-              },
-            },
-          },
-        },
       },
     });
   }

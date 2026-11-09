@@ -27,7 +27,7 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({ item, product, onQua
   const toppings = customization.toppingIds
     .map((id) => toppingOptions.find((t) => t.id === id))
     .filter((t): t is NonNullable<typeof t> => Boolean(t));
-  const detailHref = item.productOptions ? `/thuc-don/${item.productId}` : product ? `/thuc-don/${product.slug}` : undefined;
+  const detailHref = item.productOptions ? `/products/${item.productId}` : product ? `/products/${product.slug}` : undefined;
 
   return (
     <article
