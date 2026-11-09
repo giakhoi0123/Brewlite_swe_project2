@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProductsService } from './products.service';
 import { ProductsRepository } from './products.repository';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { OptionType, Prisma } from '@prisma/client';
 
 describe('ProductsService', () => {
@@ -44,6 +44,7 @@ describe('ProductsService', () => {
     const mockRepo = {
       findMany: jest.fn(),
       findById: jest.fn(),
+      findProductWithOptionsAndRecipes: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -152,6 +153,363 @@ describe('ProductsService', () => {
       repository.findById.mockResolvedValue(null);
 
       await expect(service.findOne('non-existent-uuid')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('checkAvailability', () => {
+    const validProductId = 'a0000000-0000-0000-0000-000000000001';
+    const sizeMId = 'b0000000-0000-0000-0000-000000000001';
+    const sizeLId = 'b0000000-0000-0000-0000-000000000002';
+    const toppingId = 'b0000000-0000-0000-0000-000000000003';
+    const coffeeIngId = 'd0000000-0000-4000-8000-000000000001';
+    const jellyIngId = 'd0000000-0000-4000-8000-000000000009';
+
+    it('throws NotFoundException when product does not exist', async () => {
+      repository.findProductWithOptionsAndRecipes.mockResolvedValue(null);
+
+      await expect(
+        service.checkAvailability('non-existent-id', { selectedOptions: [sizeMId] }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws BadRequestException when an option does not belong to the product', async () => {
+      repository.findProductWithOptionsAndRecipes.mockResolvedValue({
+        id: validProductId,
+        isAvailable: true,
+        options: [
+          {
+            id: sizeMId,
+            productId: validProductId,
+            type: OptionType.SIZE,
+            recipes: [],
+          },
+        ],
+      });
+
+      await expect(
+        service.checkAvailability(validProductId, {
+          selectedOptions: [sizeMId, 'alien-option-id'],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException when selectedOptions contains duplicate IDs', async () => {
+      await expect(
+        service.checkAvailability(validProductId, {
+          selectedOptions: [sizeMId, sizeMId],
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(repository.findProductWithOptionsAndRecipes).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when no SIZE option is selected', async () => {
+      repository.findProductWithOptionsAndRecipes.mockResolvedValue({
+        id: validProductId,
+        isAvailable: true,
+        options: [
+          {
+            id: toppingId,
+            productId: validProductId,
+            type: OptionType.TOPPING,
+            recipes: [],
+          },
+        ],
+      });
+
+      await expect(
+        service.checkAvailability(validProductId, { selectedOptions: [toppingId] }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException when multiple SIZE options are selected', async () => {
+      repository.findProductWithOptionsAndRecipes.mockResolvedValue({
+        id: validProductId,
+        isAvailable: true,
+        options: [
+          {
+            id: sizeMId,
+            productId: validProductId,
+            type: OptionType.SIZE,
+            recipes: [],
+          },
+          {
+            id: sizeLId,
+            productId: validProductId,
+            type: OptionType.SIZE,
+            recipes: [],
+          },
+        ],
+      });
+
+      await expect(
+        service.checkAvailability(validProductId, { selectedOptions: [sizeMId, sizeLId] }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('calculates capacity correctly for valid SIZE option', async () => {
+      repository.findProductWithOptionsAndRecipes.mockResolvedValue({
+        id: validProductId,
+        isAvailable: true,
+        options: [
+          {
+            id: sizeMId,
+            productId: validProductId,
+            type: OptionType.SIZE,
+            recipes: [
+              {
+                amount: new Prisma.Decimal('25.000'),
+                ingredient: {
+                  id: coffeeIngId,
+                  stock: new Prisma.Decimal('500.000'),
+                },
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await service.checkAvailability(validProductId, {
+        selectedOptions: [sizeMId],
+      });
+
+      expect(result).toEqual({
+        productId: validProductId,
+        availableStock: 20,
+        canOrder: true,
+      });
+    });
+
+    it('sums amounts when SIZE and TOPPING share the same ingredient', async () => {
+      repository.findProductWithOptionsAndRecipes.mockResolvedValue({
+        id: validProductId,
+        isAvailable: true,
+        options: [
+          {
+            id: sizeMId,
+            productId: validProductId,
+            type: OptionType.SIZE,
+            recipes: [
+              {
+                amount: new Prisma.Decimal('20.000'),
+                ingredient: { id: coffeeIngId, stock: new Prisma.Decimal('360.000') },
+              },
+            ],
+          },
+          {
+            id: toppingId,
+            productId: validProductId,
+            type: OptionType.TOPPING,
+            recipes: [
+              {
+                amount: new Prisma.Decimal('10.000'),
+                ingredient: { id: coffeeIngId, stock: new Prisma.Decimal('360.000') },
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await service.checkAvailability(validProductId, {
+        selectedOptions: [sizeMId, toppingId],
+      });
+
+      expect(result.availableStock).toBe(12);
+      expect(result.canOrder).toBe(true);
+    });
+
+    it('takes the bottleneck capacity across distinct ingredients', async () => {
+      repository.findProductWithOptionsAndRecipes.mockResolvedValue({
+        id: validProductId,
+        isAvailable: true,
+        options: [
+          {
+            id: sizeMId,
+            productId: validProductId,
+            type: OptionType.SIZE,
+            recipes: [
+              {
+                amount: new Prisma.Decimal('25.000'),
+                ingredient: { id: coffeeIngId, stock: new Prisma.Decimal('500.000') },
+              },
+            ],
+          },
+          {
+            id: toppingId,
+            productId: validProductId,
+            type: OptionType.TOPPING,
+            recipes: [
+              {
+                amount: new Prisma.Decimal('40.000'),
+                ingredient: { id: jellyIngId, stock: new Prisma.Decimal('200.000') },
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await service.checkAvailability(validProductId, {
+        selectedOptions: [sizeMId, toppingId],
+      });
+
+      expect(result.availableStock).toBe(5);
+      expect(result.canOrder).toBe(true);
+    });
+
+    it('returns capacity = 0 and canOrder = false when an option has no recipes', async () => {
+      repository.findProductWithOptionsAndRecipes.mockResolvedValue({
+        id: validProductId,
+        isAvailable: true,
+        options: [
+          {
+            id: sizeMId,
+            productId: validProductId,
+            type: OptionType.SIZE,
+            recipes: [],
+          },
+        ],
+      });
+
+      const result = await service.checkAvailability(validProductId, {
+        selectedOptions: [sizeMId],
+      });
+
+      expect(result.availableStock).toBe(0);
+      expect(result.canOrder).toBe(false);
+    });
+
+    it('returns capacity = 0 and canOrder = false when ingredient stock is 0', async () => {
+      repository.findProductWithOptionsAndRecipes.mockResolvedValue({
+        id: validProductId,
+        isAvailable: true,
+        options: [
+          {
+            id: sizeMId,
+            productId: validProductId,
+            type: OptionType.SIZE,
+            recipes: [
+              {
+                amount: new Prisma.Decimal('25.000'),
+                ingredient: { id: coffeeIngId, stock: new Prisma.Decimal('0.000') },
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await service.checkAvailability(validProductId, {
+        selectedOptions: [sizeMId],
+      });
+
+      expect(result.availableStock).toBe(0);
+      expect(result.canOrder).toBe(false);
+    });
+
+    it('returns canOrder = false when product.isAvailable is false', async () => {
+      repository.findProductWithOptionsAndRecipes.mockResolvedValue({
+        id: validProductId,
+        isAvailable: false,
+        options: [
+          {
+            id: sizeMId,
+            productId: validProductId,
+            type: OptionType.SIZE,
+            recipes: [
+              {
+                amount: new Prisma.Decimal('25.000'),
+                ingredient: { id: coffeeIngId, stock: new Prisma.Decimal('500.000') },
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await service.checkAvailability(validProductId, {
+        selectedOptions: [sizeMId],
+      });
+
+      expect(result.availableStock).toBe(20);
+      expect(result.canOrder).toBe(false);
+    });
+
+    it('response contract only contains productId, availableStock, and canOrder', async () => {
+      repository.findProductWithOptionsAndRecipes.mockResolvedValue({
+        id: validProductId,
+        isAvailable: true,
+        options: [
+          {
+            id: sizeMId,
+            productId: validProductId,
+            type: OptionType.SIZE,
+            recipes: [
+              {
+                amount: new Prisma.Decimal('25.000'),
+                ingredient: { id: coffeeIngId, stock: new Prisma.Decimal('500.000') },
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await service.checkAvailability(validProductId, {
+        selectedOptions: [sizeMId],
+      });
+
+      expect(Object.keys(result).sort()).toEqual(
+        ['availableStock', 'canOrder', 'productId'].sort(),
+      );
+      expect(result).not.toHaveProperty('recipes');
+      expect(result).not.toHaveProperty('stock');
+      expect(result).not.toHaveProperty('version');
+    });
+
+    it('does not perform any mutation on repository', async () => {
+      repository.findProductWithOptionsAndRecipes.mockResolvedValue({
+        id: validProductId,
+        isAvailable: true,
+        options: [
+          {
+            id: sizeMId,
+            productId: validProductId,
+            type: OptionType.SIZE,
+            recipes: [
+              {
+                amount: new Prisma.Decimal('25.000'),
+                ingredient: { id: coffeeIngId, stock: new Prisma.Decimal('500.000') },
+              },
+            ],
+          },
+        ],
+      });
+
+      await service.checkAvailability(validProductId, { selectedOptions: [sizeMId] });
+
+      expect(repository.findMany).not.toHaveBeenCalled();
+      expect(repository.findById).not.toHaveBeenCalled();
+      expect(repository.findProductWithOptionsAndRecipes).toHaveBeenCalledTimes(1);
+    });
+
+    it('maps domain error into BadRequestException', async () => {
+      repository.findProductWithOptionsAndRecipes.mockResolvedValue({
+        id: validProductId,
+        isAvailable: true,
+        options: [
+          {
+            id: sizeMId,
+            productId: validProductId,
+            type: OptionType.SIZE,
+            recipes: [
+              {
+                amount: new Prisma.Decimal('-10.000'),
+                ingredient: { id: coffeeIngId, stock: new Prisma.Decimal('500.000') },
+              },
+            ],
+          },
+        ],
+      });
+
+      await expect(
+        service.checkAvailability(validProductId, { selectedOptions: [sizeMId] }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

@@ -38,6 +38,7 @@ describe('ProductsController', () => {
     const mockService = {
       findAll: jest.fn(),
       findOne: jest.fn(),
+      checkAvailability: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -82,6 +83,36 @@ describe('ProductsController', () => {
 
       expect(service.findOne).toHaveBeenCalledWith('a0000000-0000-0000-0000-000000000001');
       expect(result).toEqual(mockProductDetailResponse);
+    });
+  });
+
+  describe('checkAvailability', () => {
+    const mockAvailabilityResponse = {
+      productId: 'a0000000-0000-0000-0000-000000000001',
+      availableStock: 12,
+      canOrder: true,
+    };
+
+    it('should call service.checkAvailability with productId and selectedOptions', async () => {
+      service.checkAvailability.mockResolvedValue(mockAvailabilityResponse);
+
+      const dto = {
+        selectedOptions: [
+          'b0000000-0000-0000-0000-000000000001',
+          'b0000000-0000-0000-0000-000000000003',
+        ],
+      };
+
+      const result = await controller.checkAvailability(
+        'a0000000-0000-0000-0000-000000000001',
+        dto,
+      );
+
+      expect(service.checkAvailability).toHaveBeenCalledWith(
+        'a0000000-0000-0000-0000-000000000001',
+        dto,
+      );
+      expect(result).toEqual(mockAvailabilityResponse);
     });
   });
 });

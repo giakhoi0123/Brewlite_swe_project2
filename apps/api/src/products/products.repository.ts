@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, ProductOption } from '@prisma/client';
+import { OptionType, Prisma, ProductOption } from '@prisma/client';
 
 export type ProductWithInventory = Prisma.ProductGetPayload<{
   include: { inventory: { select: { quantity: true; reserved: true } } };
@@ -8,6 +8,23 @@ export type ProductWithInventory = Prisma.ProductGetPayload<{
 
 export type ProductWithDetails = ProductWithInventory & {
   options: ProductOption[];
+};
+
+export type ProductAvailabilityQueryResult = {
+  id: string;
+  isAvailable: boolean;
+  options: {
+    id: string;
+    productId: string;
+    type: OptionType;
+    recipes: {
+      amount: Prisma.Decimal;
+      ingredient: {
+        id: string;
+        stock: Prisma.Decimal;
+      };
+    }[];
+  }[];
 };
 
 @Injectable()
@@ -44,6 +61,40 @@ export class ProductsRepository {
           ],
         },
         inventory: { select: { quantity: true, reserved: true } },
+      },
+    });
+  }
+
+  async findProductWithOptionsAndRecipes(
+    productId: string,
+    selectedOptionIds: string[],
+  ): Promise<ProductAvailabilityQueryResult | null> {
+    return this.prisma.product.findUnique({
+      where: { id: productId },
+      select: {
+        id: true,
+        isAvailable: true,
+        options: {
+          where: {
+            id: { in: selectedOptionIds },
+          },
+          select: {
+            id: true,
+            productId: true,
+            type: true,
+            recipes: {
+              select: {
+                amount: true,
+                ingredient: {
+                  select: {
+                    id: true,
+                    stock: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
   }

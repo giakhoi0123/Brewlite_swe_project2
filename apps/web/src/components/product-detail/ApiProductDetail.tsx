@@ -3,8 +3,12 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { fetchProductDetailFromApi, ProductApiError } from '../../services/product-api';
-import { ProductDetail } from '../../types/product';
+import {
+  fetchProductDetailFromApi,
+  checkProductAvailabilityApi,
+  ProductApiError,
+} from '../../services/product-api';
+import { ProductDetail, ProductAvailabilityResponse } from '../../types/product';
 import { DrinkCustomization } from '../../types/menu';
 import { DEFAULT_CUSTOMIZATION } from '../../data/menu-options';
 import { calcUnitPrice } from '../../lib/pricing';
@@ -13,6 +17,50 @@ import { useCart } from '../cart/CartProvider';
 import { useFavorites } from '../favorites/FavoritesProvider';
 import { useToast } from '../ui/ToastProvider';
 import { ProductGallery } from './ProductGallery';
+
+export function computeProductBadge({
+  isAvailable,
+  isSizeSelected,
+  isLoading,
+  error,
+  availability,
+}: {
+  isAvailable: boolean;
+  isSizeSelected: boolean;
+  isLoading: boolean;
+  error: Error | null;
+  availability: ProductAvailabilityResponse | null;
+}): string {
+  // 1. product.isAvailable === false: Tạm ngừng bán (ưu tiên hàng đầu)
+  if (!isAvailable) {
+    return 'Tạm ngừng bán';
+  }
+
+  // 5. Chưa chọn SIZE: Trạng thái trung lập, chưa khẳng định capacity theo công thức
+  if (!isSizeSelected) {
+    return 'Chọn kích cỡ';
+  }
+
+  // 2. availabilityLoading === true: Đang kiểm tra
+  if (isLoading) {
+    return 'Đang kiểm tra';
+  }
+
+  // 3. availabilityError !== null: Chưa xác định
+  if (error !== null) {
+    return 'Chưa xác định';
+  }
+
+  // 4. Availability thành công
+  if (availability) {
+    if (availability.canOrder && availability.availableStock > 0) {
+      return 'Còn món';
+    }
+    return 'Tạm hết món';
+  }
+
+  return 'Chưa xác định';
+}
 
 export function ApiProductDetail({ id }: { id: string }) {
   const [product, setProduct] = useState<ProductDetail | null>(null);
@@ -46,61 +94,304 @@ function ProductContent({ product }: { product: ProductDetail }) {
   const sizes = product.options.filter((o) => o.type === 'SIZE');
   const toppings = product.options.filter((o) => o.type === 'TOPPING');
   const [customization, setCustomization] = useState<DrinkCustomization>({
-    ...DEFAULT_CUSTOMIZATION, size: sizes[0]?.id ?? '', toppingIds: [],
+    ...DEFAULT_CUSTOMIZATION,
+    size: sizes[0]?.id ?? '',
+    toppingIds: [],
   });
   const [quantity, setQuantity] = useState(1);
+  const [quantityAdjustNotice, setQuantityAdjustNotice] = useState<string | null>(null);
+
+  // Availability state
+  const [availability, setAvailability] = useState<ProductAvailabilityResponse | null>(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState<ProductApiError | null>(null);
+  const [availabilityAttempt, setAvailabilityAttempt] = useState(0);
+
   const { addItem } = useCart();
   const { showToast } = useToast();
   const { isFavorite, toggleFavorite } = useFavorites();
   const router = useRouter();
-  const stock = product.inventory?.availableStock ?? 0;
-  const available = product.isAvailable && product.canOrder !== false && stock > 0;
+
+  useEffect(() => {
+    // 1. Khi chưa có đúng một SIZE: Không gọi API, reset availability
+    if (!customization.size) {
+      setAvailability(null);
+      setAvailabilityLoading(false);
+      setAvailabilityError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setAvailabilityLoading(true);
+    setAvailabilityError(null);
+
+    const selectedOptions = [customization.size, ...customization.toppingIds];
+
+    checkProductAvailabilityApi(product.id, selectedOptions, controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) {
+          setAvailability(data);
+        }
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          setAvailabilityError(err);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setAvailabilityLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [product.id, customization.size, customization.toppingIds, availabilityAttempt]);
+
+  // A & B: Hiệu chỉnh quantity khi availability cập nhật thành công (không lồng setState trong updater)
+  useEffect(() => {
+    if (!availability) return;
+    const stock = availability.availableStock;
+    // B. Invariant quantity >= 1: availableStock = 0 không được làm quantity = 0
+    if (stock > 0 && quantity > stock) {
+      setQuantity(stock);
+      setQuantityAdjustNotice('Số lượng đã được điều chỉnh theo nguyên liệu hiện có.');
+    }
+  }, [availability, quantity]);
+
+  const isSizeSelected = Boolean(customization.size && customization.size.trim().length > 0);
+
+  // Khi đã chọn SIZE: Availability API là nguồn quyết định DUY NHẤT
+  const isAvailabilityReady =
+    isSizeSelected &&
+    !availabilityLoading &&
+    availabilityError === null &&
+    availability !== null;
+
+  const effectiveStock = isSizeSelected
+    ? (isAvailabilityReady && availability ? availability.availableStock : 0)
+    : (product.inventory?.availableStock ?? 0);
+
+  const canAddToCart = Boolean(
+    product &&
+    product.isAvailable &&
+    isSizeSelected &&
+    isAvailabilityReady &&
+    availability &&
+    availability.canOrder === true &&
+    availability.availableStock > 0 &&
+    quantity >= 1 &&
+    quantity <= availability.availableStock,
+  );
+
   const total = calcUnitPrice(product.basePrice, customization, product.options) * quantity;
+
   const add = (buyNow: boolean) => {
-    if (!available || quantity > stock) return;
-    addItem({ productId: product.id, name: product.name, imageUrl: product.imageUrl,
-      basePrice: product.basePrice, productOptions: product.options, customization, quantity });
+    // Guard chặt chẽ: không thể bypass qua double-click hoặc gọi handler trực tiếp khi disabled
+    if (!canAddToCart) return;
+    addItem({
+      productId: product.id,
+      name: product.name,
+      imageUrl: product.imageUrl,
+      basePrice: product.basePrice,
+      productOptions: product.options,
+      customization,
+      quantity,
+    });
     showToast(`Đã thêm ${quantity}x ${product.name} vào giỏ!`);
     if (buyNow) router.push('/gio-hang');
   };
 
-  return <div className="grid grid-cols-1 lg:grid-cols-2 gap-gutter-lg items-start">
-    <ProductGallery name={product.name} images={[product.imageUrl]} badges={[available ? 'Còn món' : 'Tạm hết món']} tags={[]}
-      isAvailable={available} isFavorite={isFavorite(product.id)} onToggleFavorite={() => toggleFavorite(product.id)} />
-    <div className="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col gap-6">
-      <h1 className="font-display text-headline-display-mobile font-bold">{product.name}</h1>
-      <p className="text-primary text-headline-lg font-bold">{formatCurrency(product.basePrice)}</p>
-      <p>{available ? `Còn ${stock} ly có thể đặt` : 'Món hiện không thể đặt.'}</p>
-      {sizes.length > 0 && <fieldset>
-        <legend className="font-bold mb-3">Chọn kích thước</legend>
-        <div className="flex flex-wrap gap-3">{sizes.map((size) => <button key={size.id} type="button" aria-pressed={customization.size === size.id}
-          onClick={() => setCustomization({ ...customization, size: size.id })}
-          className={`rounded-xl px-5 py-3 ${customization.size === size.id ? 'bg-primary text-on-primary' : 'bg-surface-container'}`}>
-          {size.name} (+{formatCurrency(size.extraPrice)})
-        </button>)}</div>
-      </fieldset>}
-      {toppings.length > 0 && <fieldset>
-        <legend className="font-bold mb-3">Thêm topping</legend>
-        <div className="flex flex-col gap-3">{toppings.map((topping) => <label key={topping.id} className="flex items-center gap-3 p-3 bg-surface-container rounded-xl">
-          <input type="checkbox" checked={customization.toppingIds.includes(topping.id)} onChange={(event) => setCustomization({ ...customization,
-            toppingIds: event.target.checked ? [...customization.toppingIds, topping.id] : customization.toppingIds.filter((id) => id !== topping.id) })} />
-          {topping.name} (+{formatCurrency(topping.extraPrice)})
-        </label>)}</div>
-      </fieldset>}
-      <label className="flex flex-col gap-2">Ghi chú
-        <input value={customization.note ?? ''} maxLength={120} onChange={(e) => setCustomization({ ...customization, note: e.target.value })}
-          className="rounded-full px-4 py-3 bg-surface-container" placeholder="Ghi chú cho món của bạn" />
-      </label>
-      <label className="flex items-center justify-between gap-3">Số lượng
-        <input aria-label="Số lượng" type="number" min={1} max={Math.max(1, Math.min(99, stock))} disabled={!available} value={quantity}
-          onChange={(e) => setQuantity(Math.max(1, Math.min(99, stock, Math.floor(Number(e.target.value) || 1))))}
-          className="w-24 rounded-full px-4 py-2 bg-surface-container" />
-      </label>
-      <p className="font-bold text-headline-sm">Tổng: <span data-testid="api-detail-total">{formatCurrency(total)}</span></p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <button disabled={!available} onClick={() => add(false)} className="rounded-full px-5 py-3 bg-primary text-on-primary disabled:opacity-40">Thêm vào giỏ hàng</button>
-        <button disabled={!available} onClick={() => add(true)} className="rounded-full px-5 py-3 bg-secondary text-on-secondary disabled:opacity-40">Mua ngay</button>
+  const renderAvailabilityStatus = () => {
+    if (!product.isAvailable) {
+      return <p className="text-error font-medium">Món hiện không thể đặt.</p>;
+    }
+
+    if (!isSizeSelected) {
+      return (
+        <p className="text-secondary font-medium">
+          Chọn kích cỡ để xem số lượng có thể đặt
+        </p>
+      );
+    }
+
+    if (availabilityLoading) {
+      return (
+        <p role="status" className="text-on-surface-variant animate-pulse font-medium">
+          Đang kiểm tra nguyên liệu...
+        </p>
+      );
+    }
+
+    if (availabilityError) {
+      return (
+        <div role="alert" className="flex items-center gap-3 text-error">
+          <span className="font-medium">Không thể kiểm tra nguyên liệu. Vui lòng thử lại.</span>
+          <button
+            type="button"
+            onClick={() => setAvailabilityAttempt((n) => n + 1)}
+            className="text-primary underline font-medium text-body-sm"
+          >
+            Thử lại
+          </button>
+        </div>
+      );
+    }
+
+    if (availability) {
+      if (availability.availableStock === 0 || !availability.canOrder) {
+        return <p className="text-error font-medium">Món hiện không đủ nguyên liệu</p>;
+      }
+      return (
+        <p className="text-on-surface-variant font-medium">
+          Còn tối đa {availability.availableStock} ly
+        </p>
+      );
+    }
+
+    return null;
+  };
+
+  const badgeLabel = computeProductBadge({
+    isAvailable: product.isAvailable,
+    isSizeSelected,
+    isLoading: availabilityLoading,
+    error: availabilityError,
+    availability,
+  });
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-gutter-lg items-start">
+      <ProductGallery
+        name={product.name}
+        images={[product.imageUrl]}
+        badges={[badgeLabel]}
+        tags={[]}
+        isAvailable={product.isAvailable}
+        isFavorite={isFavorite(product.id)}
+        onToggleFavorite={() => toggleFavorite(product.id)}
+      />
+      <div className="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col gap-6">
+        <h1 className="font-display text-headline-display-mobile font-bold">{product.name}</h1>
+        <p className="text-primary text-headline-lg font-bold">{formatCurrency(product.basePrice)}</p>
+        {renderAvailabilityStatus()}
+        {quantityAdjustNotice && (
+          <p role="status" className="text-secondary text-body-sm bg-surface-container p-2 rounded-lg">
+            {quantityAdjustNotice}
+          </p>
+        )}
+        {sizes.length > 0 && (
+          <fieldset>
+            <legend className="font-bold mb-3">Chọn kích thước</legend>
+            <div className="flex flex-wrap gap-3">
+              {sizes.map((size) => (
+                <button
+                  key={size.id}
+                  type="button"
+                  aria-pressed={customization.size === size.id}
+                  onClick={() => {
+                    setQuantityAdjustNotice(null);
+                    setCustomization({
+                      ...customization,
+                      size: customization.size === size.id ? '' : size.id,
+                    });
+                  }}
+                  className={`rounded-xl px-5 py-3 ${
+                    customization.size === size.id
+                      ? 'bg-primary text-on-primary'
+                      : 'bg-surface-container'
+                  }`}
+                >
+                  {size.name} (+{formatCurrency(size.extraPrice)})
+                </button>
+              ))}
+            </div>
+          </fieldset>
+        )}
+        {toppings.length > 0 && (
+          <fieldset>
+            <legend className="font-bold mb-3">Thêm topping</legend>
+            <div className="flex flex-col gap-3">
+              {toppings.map((topping) => (
+                <label key={topping.id} className="flex items-center gap-3 p-3 bg-surface-container rounded-xl">
+                  <input
+                    type="checkbox"
+                    checked={customization.toppingIds.includes(topping.id)}
+                    onChange={(event) => {
+                      setQuantityAdjustNotice(null);
+                      setCustomization({
+                        ...customization,
+                        toppingIds: event.target.checked
+                          ? [...customization.toppingIds, topping.id]
+                          : customization.toppingIds.filter((id) => id !== topping.id),
+                      });
+                    }}
+                  />
+                  {topping.name} (+{formatCurrency(topping.extraPrice)})
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
+        <label className="flex flex-col gap-2">
+          Ghi chú
+          <input
+            value={customization.note ?? ''}
+            maxLength={120}
+            onChange={(e) => setCustomization({ ...customization, note: e.target.value })}
+            className="rounded-full px-4 py-3 bg-surface-container"
+            placeholder="Ghi chú cho món của bạn"
+          />
+        </label>
+        <label className="flex items-center justify-between gap-3">
+          Số lượng
+          <input
+            aria-label="Số lượng"
+            type="number"
+            min={1}
+            max={effectiveStock > 0 ? Math.min(99, effectiveStock) : 1}
+            disabled={!isAvailabilityReady || effectiveStock === 0}
+            value={quantity}
+            onChange={(e) => {
+              setQuantityAdjustNotice(null);
+              const rawValue = e.target.value.trim();
+              if (rawValue === '') {
+                setQuantity(1);
+                return;
+              }
+              const parsed = parseInt(rawValue, 10);
+              if (isNaN(parsed) || parsed < 1) {
+                setQuantity(1);
+                return;
+              }
+              const safeMax = effectiveStock > 0 ? Math.min(99, effectiveStock) : 1;
+              const clamped = Math.min(parsed, safeMax);
+              setQuantity(Math.max(1, clamped));
+            }}
+            className="w-24 rounded-full px-4 py-2 bg-surface-container"
+          />
+        </label>
+        <p className="font-bold text-headline-sm">
+          Tổng: <span data-testid="api-detail-total">{formatCurrency(total)}</span>
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            disabled={!canAddToCart}
+            onClick={() => add(false)}
+            className="rounded-full px-5 py-3 bg-primary text-on-primary disabled:opacity-40"
+          >
+            Thêm vào giỏ hàng
+          </button>
+          <button
+            disabled={!canAddToCart}
+            onClick={() => add(true)}
+            className="rounded-full px-5 py-3 bg-secondary text-on-secondary disabled:opacity-40"
+          >
+            Mua ngay
+          </button>
+        </div>
       </div>
     </div>
-  </div>;
+  );
 }
