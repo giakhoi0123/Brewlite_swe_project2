@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
-import { Coffee, LogOut, Search, ShoppingBag, User as UserIcon, UtensilsCrossed } from 'lucide-react';
+import { Clock, Coffee, LogOut, Search, ShoppingBag, User as UserIcon, UtensilsCrossed } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider';
 import { useCart } from '../cart/CartProvider';
 
@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: '/', label: 'Trang chủ' },
   { href: '/thuc-don', label: 'Thực đơn' },
   { href: '/khuyen-mai', label: 'Khuyến mãi' },
+  { href: '/lich-su-don-hang', label: 'Lịch sử' },
   { href: '/ve-chung-toi', label: 'Về chúng tôi' },
 ];
 
@@ -121,6 +122,15 @@ export const Header: React.FC = () => {
                       Kênh Barista
                     </Link>
                   )}
+
+                  <Link
+                    href="/lich-su-don-hang"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex items-center gap-2 px-4 py-2 text-body-sm text-on-surface hover:bg-surface-container font-medium transition-colors"
+                  >
+                    <Clock className="w-4 h-4 text-on-surface-variant" />
+                    Lịch sử đơn hàng
+                  </Link>
 
                   <button
                     type="button"
