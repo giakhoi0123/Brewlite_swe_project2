@@ -194,7 +194,7 @@ describe('ApiProductDetail Canonical Availability Integration', () => {
   });
 
   it('5. hiển thị loading "Đang kiểm tra nguyên liệu..." trong lúc gọi API', async () => {
-    let resolveApi: (value: any) => void;
+    let resolveApi: ((value: any) => void) | undefined;
     (checkCartAvailability as jest.Mock).mockReturnValue(
       new Promise((res) => {
         resolveApi = res;
@@ -207,7 +207,7 @@ describe('ApiProductDetail Canonical Availability Integration', () => {
     expect(screen.getByText('Đang kiểm tra nguyên liệu...')).toBeInTheDocument();
     expect(screen.getByText('Đang kiểm tra')).toBeInTheDocument();
 
-    resolveApi(await mockAvailabilityResponse(10, true, true)([
+    resolveApi?.(await mockAvailabilityResponse(10, true, true)([
       { productId: mockProduct.id, customization: { size: 'size-m-id', toppingIds: [] }, quantity: 1 },
     ]));
 
