@@ -1,0 +1,49 @@
+# Task 5 — Nguyễn Tuấn Kiệt payment acceptance record
+
+Ngày kiểm tra local: 2026-11-09.
+
+## Phạm vi theo Assignment
+
+| Yêu cầu Task 5 của Kiệt | Minh chứng |
+|---|---|
+| Mock Payment Ví/Thẻ | `MockPaymentGatewayAdapter` hỗ trợ cả `WALLET` và `CARD`. |
+| Success/failure/processing/timeout/unknown | Unit test adapter và API mapping sang HTTP `200`, `402`, `202`. |
+| Idempotency | Unique `payments.idempotency_key`, request fingerprint và replay response đã lưu. |
+| Không ghi nhận trùng | PostgreSQL integration test gửi hai request đồng thời, kiểm tra một row Payment, cùng `paymentId` và gateway chỉ được gọi một lần. |
+| Retry sau decline | Service và integration test xác nhận key mới tạo attempt mới, chuyển `PAYMENT_FAILED` sang `PAID`. |
+| Chặn thanh toán trùng | Partial unique index chỉ cho tối đa một Payment `PAID` trên mỗi order; key mới trên order đã trả tiền nhận `ORDER_ALREADY_PAID`. |
+| JWT và ownership | Endpoint có payment-specific JWT error contract và kiểm tra chủ sở hữu order trước khi gọi gateway. |
+
+## Kết quả quality gate local
+
+Chạy từ `apps/api` với PostgreSQL test riêng `brewlite_test`:
+
+```powershell
+npm.cmd run lint
+npm.cmd test -- --runInBand
+npm.cmd run test:integration
+npm.cmd run test:e2e -- --runInBand
+npm.cmd run build
+```
+
+Kết quả:
+
+- Prisma: 7/7 migrations apply thành công; seed tạo lại dữ liệu thành công.
+- Unit/service: 11 suites, 57 tests passed.
+- PostgreSQL integration: 4 suites, 18 tests passed.
+- API E2E chạy tuần tự: 6 suites, 34 tests passed.
+- ESLint: passed.
+- Nest build: passed.
+- Checkout UI test: passed; Next.js production build: passed.
+
+Test trọng tâm nằm tại:
+
+- `apps/api/src/payments/adapters/mock-payment-gateway.adapter.spec.ts`
+- `apps/api/src/payments/payments.service.spec.ts`
+- `apps/api/test/payments-integration.e2e-spec.ts`
+
+## Ghi chú ranh giới module
+
+Payment không nhận hoặc lưu số thẻ, CVV hay token ví thật. Số tiền luôn đọc từ Order. Inventory
+reservation thuộc Orders module; phiên bản Orders hiện tại không tạo reservation riêng ở bước
+payment, vì vậy failure không thực hiện một phép trừ/hoàn tồn kho thứ hai.

@@ -1,16 +1,15 @@
 # Payments API contract — Task 5.1
 
-Status: **Accepted for Sprint 2 implementation**.
+Status: **Implemented and verified for Sprint 2**.
 
-This contract defines the simulated Wallet/Card payment boundary. It is the source of truth
-for the API implementation, frontend integration and payment tests. It does not claim that the
-Payments module or database schema already exists.
+This contract defines the implemented simulated Wallet/Card payment boundary. It is the source
+of truth for the API implementation, frontend integration and payment tests.
 
 Traceability: UC-01, FR-03, FR-05, NFR-02, NFR-04 and ADR-004.
 
-Implementation prerequisite: the Orders owner must provide the authoritative order total,
-customer ownership, payable-state rules and inventory reservation/release behavior before the
-payment persistence migration is finalized.
+The Payments service reads the authoritative total, customer ownership and payable state from
+the persisted Order. Inventory reservation remains owned by the Orders flow; the current Orders
+implementation does not create a second payment-specific reservation to release.
 
 ## Endpoint and authentication
 
@@ -173,10 +172,9 @@ The frontend already calls `POST /api/payments`, sends JWT and `Idempotency-Key`
 the mock scenario header to non-production builds. The backend implementation must conform to
 this document rather than introducing a second response shape.
 
-The current API CORS allowlist does not yet include `Idempotency-Key` or
-`X-Mock-Payment-Scenario`. The Payments implementation must allow `Idempotency-Key` for the
-browser client and allow the mock scenario header only in development/test; production must
-not expose caller-controlled mock outcomes.
+The API CORS allowlist includes `Idempotency-Key` for the browser client and includes
+`X-Mock-Payment-Scenario` only outside production. Production ignores caller-controlled mock
+outcomes and does not expose the mock scenario header through CORS.
 
 Deterministic examples and expected status codes are stored in
 `apps/api/test/fixtures/payment-mock-contract.fixture.ts`.
@@ -189,7 +187,7 @@ Required verification for Task 5:
   and return the same `paymentId`.
 - CI execution through the backend quality gate after the Payments module is implemented.
 
-Planned API verification commands from `apps/api`:
+Verified API commands from `apps/api`:
 
 ```powershell
 npm.cmd run lint
