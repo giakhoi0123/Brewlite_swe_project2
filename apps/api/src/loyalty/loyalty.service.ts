@@ -95,15 +95,15 @@ export class LoyaltyService {
         else if (dto.points === 100) discountValue = 70000;
 
         await tx.promotion.upsert({
-          where: { code: dto.rewardCode },
+          where: { code: formattedCode }, // ✅ Dùng formattedCode đã chuẩn hóa chữ hoa
           update: {
             isActive: true,
             discountValue: discountValue,
           },
           create: {
-            code: dto.rewardCode,
+            code: formattedCode, // ✅ Dùng formattedCode đã chuẩn hóa chữ hoa
             description: `Voucher đổi từ ${dto.points} điểm Loyalty`,
-            discountType: DiscountType.FIXED_AMOUNT, // DÙNG CHÍNH XÁC FIXED_AMOUNT
+            discountType: DiscountType.FIXED_AMOUNT,
             discountValue: discountValue,
             minOrderAmount: 0,
             isActive: true,
