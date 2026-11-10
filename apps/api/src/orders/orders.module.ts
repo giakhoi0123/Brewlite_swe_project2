@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
+import { PrismaModule } from '../prisma/prisma.module';
+import { PromotionsModule } from '../promotions/promotions.module';
+import { BaristaController } from './barista.controller';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
-import { PromotionsModule } from '../promotions/promotions.module';
-import { LoyaltyModule } from '../loyalty/loyalty.module';
 
 @Module({
-  imports: [PromotionsModule, LoyaltyModule],
-  controllers: [OrdersController],
+  imports: [PrismaModule, PromotionsModule, AuthModule],
+  controllers: [OrdersController, BaristaController],
   providers: [OrdersService],
   exports: [OrdersService],
 })
