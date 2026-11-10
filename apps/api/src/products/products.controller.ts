@@ -1,5 +1,9 @@
+import { AvailabilityService } from './availability.service';
+import { CheckAvailabilityDto } from './dto/check-availability.dto';
 import {
   Controller,
+  Post,
+  Body,
   Get,
   Param,
   Query,
@@ -13,7 +17,12 @@ import { ProductDetailResponseDto } from './dto/product-detail-response.dto';
 
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(private readonly productsService: ProductsService, private readonly availabilityService: AvailabilityService) {}
+
+  @Post('availability')
+  checkAvailability(@Body() body: CheckAvailabilityDto) {
+    return this.availabilityService.check(body);
+  }
 
   @Get()
   async getProducts(

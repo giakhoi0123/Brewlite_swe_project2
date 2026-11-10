@@ -25,6 +25,7 @@ import {
   MissingSizeOptionException,
   MultipleSizeOptionsException,
   OptionMissingRecipeException,
+  OrderNotFoundException,
   ProductNotFoundException,
   ProductOptionMismatchException,
   ProductOptionNotFoundException,
@@ -817,6 +818,249 @@ describe('OrdersService & Pure Helpers Unit Tests (Task 5.1 - Lê Quang Điệp)
       await expect(
         service.createOrder(mockUserId, validDtoWithVoucher),
       ).rejects.toThrow(InvalidVoucherException);
+    });
+
+    it('40c. Truyền đúng transaction client tx vào PromotionsService.validateAndCalculateDiscount', async () => {
+      setupVoucherMocks();
+      await service.createOrder(mockUserId, validDtoWithVoucher);
+
+      expect(promotionsMock.validateAndCalculateDiscount).toHaveBeenCalledWith(
+        {
+          code: 'WELCOME10',
+          orderAmount: 30000,
+        },
+        txMock,
+      );
+    });
+  });
+
+  describe('getCustomerOrderById & Privacy / IDOR Security', () => {
+    const validOrderId = '10000000-0000-4000-8000-000000000001';
+    const ownerUserId = '20000000-0000-4000-8000-000000000001';
+    const otherUserId = '20000000-0000-4000-8000-000000000002';
+
+    const mockDbOrder = {
+      id: validOrderId,
+      orderNumber: 'BL-20261110-0001',
+      status: OrderStatus.PAID,
+      subtotal: new Prisma.Decimal(50000),
+      discount: new Prisma.Decimal(5000),
+      total: new Prisma.Decimal(45000),
+      voucherCode: 'WELCOME10',
+      pointsEarned: 4,
+      pointsRedeemed: 5,
+      notes: 'Giao nhanh',
+      createdAt: new Date('2026-11-10T10:00:00Z'),
+      updatedAt: new Date('2026-11-10T10:05:00Z'),
+      promotion: {
+        code: 'WELCOME10',
+        description: 'Giảm 10%',
+      },
+      items: [
+        {
+          id: 'item-1',
+          productId: prodId1,
+          productNameSnapshot: 'Cà phê đen',
+          unitPriceSnapshot: new Prisma.Decimal(25000),
+          quantity: 2,
+          subtotal: new Prisma.Decimal(50000),
+          notes: null,
+          orderItemOptions: [
+            {
+              id: 'opt-1',
+              productOptionId: sizeMId,
+              optionNameSnapshot: 'Size M',
+              optionType: OptionType.SIZE,
+              extraPriceSnapshot: new Prisma.Decimal(0),
+            },
+          ],
+        },
+      ],
+    };
+
+    it('41. Khách hàng xem đúng đơn của mình thành công và nhận dữ liệu sanitized', async () => {
+      prismaMock.order = {
+        findFirst: jest.fn().mockResolvedValue(mockDbOrder),
+      };
+
+      const result = await service.getCustomerOrderById(validOrderId, ownerUserId);
+
+      expect(prismaMock.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            id: validOrderId,
+            userId: ownerUserId,
+          },
+        }),
+      );
+      expect(result.id).toBe(validOrderId);
+      expect(result.orderNumber).toBe('BL-20261110-0001');
+      expect(result.total).toBe(45000);
+      expect(result.items.length).toBe(1);
+    });
+
+    it('42. Khách A xem đơn của Khách B nhận OrderNotFoundException (404)', async () => {
+      prismaMock.order = {
+        findFirst: jest.fn().mockResolvedValue(null),
+      };
+
+      await expect(
+        service.getCustomerOrderById(validOrderId, otherUserId),
+      ).rejects.toThrow(OrderNotFoundException);
+    });
+
+    it('43. Response khách hàng TUYỆT ĐỐI KHÔNG chứa reservation, stock, version nội bộ', async () => {
+      prismaMock.order = {
+        findFirst: jest.fn().mockResolvedValue(mockDbOrder),
+      };
+
+      const result = await service.getCustomerOrderById(validOrderId, ownerUserId);
+
+      expect((result as any).reservation).toBeUndefined();
+      expect((result as any).reservationLines).toBeUndefined();
+      expect((result as any).lines).toBeUndefined();
+      expect((result as any).stock).toBeUndefined();
+      expect((result as any).version).toBeUndefined();
+      expect((result as any).passwordHash).toBeUndefined();
+    });
+
+    it('44. getUserOrderHistory chỉ lấy đơn của authenticated userId và sanitized kho nội bộ', async () => {
+      prismaMock.order = {
+        findMany: jest.fn().mockResolvedValue([mockDbOrder]),
+      };
+
+      const history = await service.getUserOrderHistory(ownerUserId);
+
+      expect(prismaMock.order.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: ownerUserId },
+        }),
+      );
+      expect(history.length).toBe(1);
+      expect((history[0] as any).reservation).toBeUndefined();
+      expect((history[0] as any).lines).toBeUndefined();
+    });
+  });
+
+  describe('Loyalty Points Atomicity & Concurrency Guards', () => {
+    function setupBaseMocks(userLoyaltyPoints: number = 100) {
+      txMock.user.findUnique.mockResolvedValue({
+        id: mockUserId,
+        loyaltyPoints: userLoyaltyPoints,
+      });
+      txMock.user.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+      txMock.loyaltyLog = { create: jest.fn().mockResolvedValue({ id: 'log-1' }) };
+
+      txMock.product.findMany.mockResolvedValue([
+        { id: prodId1, name: 'Cà phê đen', basePrice: new Prisma.Decimal(30000), isAvailable: true },
+      ]);
+      txMock.productOption.findMany.mockResolvedValue([
+        {
+          id: sizeMId,
+          productId: prodId1,
+          name: 'Size M',
+          type: OptionType.SIZE,
+          extraPrice: new Prisma.Decimal(0),
+          recipes: [
+            {
+              ingredientId: ingCoffeeId,
+              amount: new Prisma.Decimal('10.000'),
+              ingredient: { id: ingCoffeeId, name: 'Robusta' },
+            },
+          ],
+        },
+      ]);
+      txMock.$queryRaw.mockResolvedValue([
+        { id: ingCoffeeId, name: 'Robusta', stock: new Prisma.Decimal('100.000'), version: 1 },
+      ]);
+      txMock.ingredient.updateMany.mockResolvedValue({ count: 1 });
+      txMock.order.create.mockResolvedValue({
+        id: 'order-uuid-loyalty',
+        orderNumber: 'BL-20261110-LOYALTY',
+        status: OrderStatus.PENDING,
+        subtotal: new Prisma.Decimal(30000),
+        discount: new Prisma.Decimal(10000),
+        total: new Prisma.Decimal(20000),
+        createdAt: new Date('2026-11-10T10:00:00Z'),
+      });
+      txMock.orderItem.create.mockResolvedValue({ id: 'item-1' });
+      txMock.orderItemOption.create.mockResolvedValue({ id: 'opt-1' });
+      txMock.orderInventoryReservation.create.mockResolvedValue({ id: 'res-1' });
+      txMock.orderReservationLine.create.mockResolvedValue({ id: 'line-1' });
+      txMock.orderStatusHistory.create.mockResolvedValue({ id: 'hist-1' });
+    }
+
+    it('45. Tạo đơn với pointsToRedeem hợp lệ: thực hiện atomic updateMany và ghi loyaltyLog', async () => {
+      setupBaseMocks(100);
+      const dto: CreateOrderDto = {
+        items: [{ productId: prodId1, quantity: 1, selectedOptions: [sizeMId] }],
+        pointsToRedeem: 10, // 10 điểm = 10.000 VNĐ
+      };
+
+      await service.createOrder(mockUserId, dto);
+
+      expect(txMock.user.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: mockUserId,
+          loyaltyPoints: { gte: 10 },
+        },
+        data: {
+          loyaltyPoints: { decrement: 10 },
+        },
+      });
+      expect(txMock.loyaltyLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          userId: mockUserId,
+          points: -10,
+        }),
+      });
+    });
+
+    it('46. pointsToRedeem vượt quá số dư hiện có: ném BadRequestException ngay lập tức', async () => {
+      setupBaseMocks(5); // Chỉ có 5 điểm
+      const dto: CreateOrderDto = {
+        items: [{ productId: prodId1, quantity: 1, selectedOptions: [sizeMId] }],
+        pointsToRedeem: 10,
+      };
+
+      await expect(service.createOrder(mockUserId, dto)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(txMock.user.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('47. Concurrent race condition: updateMany count === 0 ném BadRequestException', async () => {
+      setupBaseMocks(50);
+      txMock.user.updateMany.mockResolvedValue({ count: 0 }); // Simulating race where balance changed
+      const dto: CreateOrderDto = {
+        items: [{ productId: prodId1, quantity: 1, selectedOptions: [sizeMId] }],
+        pointsToRedeem: 20,
+      };
+
+      await expect(service.createOrder(mockUserId, dto)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('48. pointsToRedeem vượt quá giá trị đơn hàng: tự động clamp không làm total âm', async () => {
+      setupBaseMocks(500); // 500 điểm = 500.000 VNĐ trong khi đơn chỉ 30.000 VNĐ
+      const dto: CreateOrderDto = {
+        items: [{ productId: prodId1, quantity: 1, selectedOptions: [sizeMId] }],
+        pointsToRedeem: 100, // Đòi đổi 100.000 VNĐ
+      };
+
+      await service.createOrder(mockUserId, dto);
+
+      // maxPointsCanUse = 30000 / 1000 = 30 điểm
+      expect(txMock.user.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: mockUserId,
+          loyaltyPoints: { gte: 30 },
+        },
+        data: {
+          loyaltyPoints: { decrement: 30 },
+        },
+      });
     });
   });
 });

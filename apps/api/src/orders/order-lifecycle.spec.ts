@@ -5,6 +5,7 @@ import {
   UserRole,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PromotionsService } from '../promotions/promotions.service';
 import {
   InvalidOrderTransitionException,
 } from './order-state-machine';
@@ -109,7 +110,14 @@ describe('Orders Lifecycle & State Machine (Unit Tests - Section VI & VIII)', ()
       $queryRaw: jest.fn(),
     };
 
-    service = new OrdersService(prismaMock as unknown as PrismaService);
+    const promotionsMock = {
+      validateAndCalculateDiscount: jest.fn(),
+    } as unknown as PromotionsService;
+
+    service = new OrdersService(
+      prismaMock as unknown as PrismaService,
+      promotionsMock,
+    );
   });
 
   // 1. Tất cả transition hợp lệ với đúng actor

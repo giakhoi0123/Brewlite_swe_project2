@@ -1,3 +1,4 @@
+import { AvailabilityService } from './availability.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProductsController } from './products.controller';
 import { ProductsService } from './products.service';
@@ -42,7 +43,7 @@ describe('ProductsController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ProductsController],
-      providers: [
+      providers: [{ provide: AvailabilityService, useValue: { check: jest.fn() } },
         {
           provide: ProductsService,
           useValue: mockService,

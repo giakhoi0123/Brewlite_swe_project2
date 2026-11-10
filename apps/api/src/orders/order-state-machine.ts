@@ -51,6 +51,10 @@ export const ORDER_TRANSITIONS: Readonly<Record<OrderStatus, readonly OrderStatu
   [OrderStatus.READY]: [
     OrderStatus.COMPLETED,
   ],
+  [OrderStatus.PROCESSING]: [
+    OrderStatus.COMPLETED,
+    OrderStatus.CANCELLED,
+  ],
   [OrderStatus.COMPLETED]: [],
   [OrderStatus.CANCELLED]: [],
 } as const;
@@ -96,6 +100,10 @@ export const ALLOWED_TRANSITION_ACTORS: Readonly<
   },
   [OrderStatus.READY]: {
     [OrderStatus.COMPLETED]: [UserRole.BARISTA, UserRole.MANAGER], // CUSTOMER hoàn toàn bị cấm
+  },
+  [OrderStatus.PROCESSING]: {
+    [OrderStatus.COMPLETED]: [UserRole.BARISTA, UserRole.MANAGER],
+    [OrderStatus.CANCELLED]: [UserRole.CUSTOMER, UserRole.MANAGER],
   },
   [OrderStatus.COMPLETED]: {},
   [OrderStatus.CANCELLED]: {},

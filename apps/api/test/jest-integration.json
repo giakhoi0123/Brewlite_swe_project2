@@ -2,7 +2,7 @@
   "moduleFileExtensions": ["js", "json", "ts"],
   "rootDir": ".",
   "testEnvironment": "node",
-  "testRegex": "(products|menu-contract-integration|products-availability-integration|orders-creation-integration|orders-http-integration|orders-lifecycle-integration|barista-http-integration)\\.e2e-spec\\.ts$",
+  "testRegex": "(products|menu-contract-integration|products-availability-integration|orders-creation-integration|orders-http-integration|orders-lifecycle-integration|barista-http-integration|orders-loyalty-integration)\\.e2e-spec\\.ts$",
   "globalSetup": "<rootDir>/integration-test-guard.ts",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"

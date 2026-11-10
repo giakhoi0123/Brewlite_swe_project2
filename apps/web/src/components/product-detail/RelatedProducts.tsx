@@ -19,7 +19,7 @@ export const RelatedProducts: React.FC<RelatedProductsProps> = ({ products, onQu
           <h2 className="font-display text-headline-lg font-extrabold tracking-tight text-on-surface">Có thể bạn sẽ thích</h2>
         </div>
         <Link
-          href="/thuc-don"
+          href="/products"
           className="hidden sm:flex items-center gap-1 font-display text-label-md font-bold text-secondary hover:text-on-surface transition-colors"
         >
           Xem tất cả <ArrowRight className="w-4 h-4" />
@@ -33,7 +33,7 @@ export const RelatedProducts: React.FC<RelatedProductsProps> = ({ products, onQu
             data-testid={`related-${product.id}`}
             className="group bg-surface-container-lowest rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col"
           >
-            <Link href={`/thuc-don/${product.slug}`} className="relative block w-full aspect-square bg-surface-container overflow-hidden">
+            <Link href={`/products/${product.slug}`} className="relative block w-full aspect-square bg-surface-container overflow-hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={product.imageUrl}
@@ -55,7 +55,7 @@ export const RelatedProducts: React.FC<RelatedProductsProps> = ({ products, onQu
                   <span className="font-display text-label-sm text-on-surface-variant">({product.reviewCount})</span>
                 </div>
                 <h3 className="font-display text-label-lg font-bold text-on-surface group-hover:text-secondary transition-colors">
-                  <Link href={`/thuc-don/${product.slug}`}>{product.name}</Link>
+                  <Link href={`/products/${product.slug}`}>{product.name}</Link>
                 </h3>
                 <p className="text-body-sm text-on-surface-variant line-clamp-1">{product.description}</p>
               </div>

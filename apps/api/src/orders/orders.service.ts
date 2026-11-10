@@ -4,7 +4,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import {
   Order,
@@ -15,8 +14,8 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
-import { CreateOrderDto } from './dto/create-order.dto';
 import { BaristaQueueQueryDto } from './dto/barista-queue-query.dto';
+import { CreateOrderDto } from './dto/create-order.dto';
 import { aggregateIngredientRequirements } from './ingredient-requirements';
 import { generateOrderNumber } from './order-number';
 import {
@@ -53,6 +52,8 @@ import {
   BaristaQueueResult,
   CreateOrderItemResponse,
   CreateOrderResult,
+  CustomerOrderResponse,
+  mapCustomerOrderResponse,
 } from './orders.types';
 
 @Injectable()
@@ -61,7 +62,7 @@ export class OrdersService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly promotionsService?: PromotionsService,
+    private readonly promotionsService: PromotionsService,
   ) {}
 
   /**
@@ -70,7 +71,8 @@ export class OrdersService {
    * 2. Thực thi toàn bộ quy trình trong một Prisma Interactive Transaction.
    * 3. Chống overselling và deadlock bằng pessimistic row lock (SELECT FOR UPDATE) sắp xếp ID tăng dần.
    * 4. Trừ tồn kho Ingredient, ghi nhận Reservation ACTIVE và tạo Order PENDING.
-   * 5. Retry có kiểm soát đối với các xung đột concurrency retryable (tối đa 3 lần).
+   * 5. Hỗ trợ Voucher discount và Loyalty points redemption trong cùng transaction ACID.
+   * 6. Retry có kiểm soát đối với các xung đột concurrency retryable (tối đa 3 lần).
    */
   async createOrder(
     authenticatedUserId: string,
@@ -130,25 +132,39 @@ export class OrdersService {
   }
 
   /**
-   * Truy vấn đơn hàng theo ID kèm đầy đủ thông tin chi tiết:
-   * Items, Options snapshot, Reservation, Reservation lines, và Lịch sử trạng thái.
+   * Truy vấn chi tiết đơn hàng của khách hàng (GET /api/orders/:id):
+   * - BẮT BUỘC authenticatedUserId (không cho phép optional để chống ownership bypass).
+   * - Chỉ truy vấn đơn hàng thuộc quyền sở hữu của authenticatedUserId (chống IDOR).
+   * - Nếu không tìm thấy hoặc đơn thuộc người khác, ném OrderNotFoundException (404)
+   *   nhằm không để lộ sự tồn tại của đơn hàng.
+   * - TUYỆT ĐỐI KHÔNG trả về thông tin nội bộ: reservation lines, ingredientId, stock, version.
    */
-  async getOrderById(orderId: string): Promise<Order> {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
+  async getCustomerOrderById(
+    orderId: string,
+    authenticatedUserId: string,
+  ): Promise<CustomerOrderResponse> {
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        orderId,
+      );
+    if (!isUuid) {
+      throw new OrderNotFoundException(orderId);
+    }
+
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id: orderId,
+        userId: authenticatedUserId,
+      },
       include: {
         items: {
           include: {
             orderItemOptions: true,
           },
+          orderBy: { createdAt: 'asc' },
         },
-        reservation: {
-          include: {
-            lines: true,
-          },
-        },
-        statusHistory: {
-          orderBy: { createdAt: 'desc' },
+        promotion: {
+          select: { code: true, description: true },
         },
       },
     });
@@ -157,7 +173,32 @@ export class OrdersService {
       throw new OrderNotFoundException(orderId);
     }
 
-    return order;
+    return mapCustomerOrderResponse(order);
+  }
+
+  /**
+   * Truy vấn lịch sử đơn hàng của người dùng hiện tại (GET /api/orders/me):
+   * - Nguồn danh tính luôn lấy từ authenticated JWT userId, sắp xếp theo createdAt giảm dần.
+   * - Tuyệt đối không để lộ dữ liệu kho nội bộ (reservation lines, stock, version).
+   */
+  async getUserOrderHistory(userId: string): Promise<CustomerOrderResponse[]> {
+    const orders = await this.prisma.order.findMany({
+      where: { userId },
+      include: {
+        items: {
+          include: {
+            orderItemOptions: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+        promotion: {
+          select: { code: true, description: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return orders.map((order) => mapCustomerOrderResponse(order));
   }
 
   /**
@@ -168,6 +209,7 @@ export class OrdersService {
    * - Kiểm soát concurrency bằng optimistic locking qua trường `version` (guarded update).
    * - Cập nhật vòng đời Reservation: ACTIVE -> CONSUMED hoặc ACTIVE -> RELEASED.
    * - Hoàn kho chính xác theo snapshot lines khi hủy, khóa Ingredient theo thứ tự ID tăng dần chống deadlock.
+   * - Xử lý Loyalty points: hoàn điểm khi CANCELLED, tích điểm khi COMPLETED.
    */
   async transitionOrderStatus(
     orderId: string,
@@ -241,7 +283,8 @@ export class OrdersService {
    * - Chỉ cho phép hủy từ các trạng thái hợp lệ (PENDING hoặc PAYMENT_FAILED).
    * - Từ chối hủy nếu đơn đã ở PAID/PREPARING/READY/COMPLETED hoặc Reservation đã CONSUMED.
    * - Hoàn kho nguyên liệu đúng lượng snapshot nếu Reservation đang ACTIVE.
-   * - Idempotent: Nếu đơn đã CANCELLED, không hoàn kho lần hai.
+   * - Hoàn trả điểm Loyalty pointsRedeemed về tài khoản khách hàng.
+   * - Idempotent: Nếu đơn đã CANCELLED, không hoàn kho hay hoàn điểm lần hai.
    */
   async cancelOrder(
     orderId: string,
@@ -274,7 +317,6 @@ export class OrdersService {
     const limit = Math.min(50, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
 
-    // Kiểm tra query.status nếu có
     const validBaristaStatuses: readonly OrderStatus[] = [
       OrderStatus.PAID,
       OrderStatus.PREPARING,
@@ -389,7 +431,6 @@ export class OrdersService {
     return mapBaristaOrderResponse(updatedOrder);
   }
 
-
   /**
    * Thực thi logic chuyển trạng thái đơn hàng trong phạm vi Prisma Transaction.
    */
@@ -400,7 +441,6 @@ export class OrdersService {
     actor?: { userId?: string; role?: string },
     reason?: string,
   ): Promise<Order> {
-    // Kiểm tra UUID hợp lệ trước khi truy vấn PostgreSQL để tránh lỗi database driver P2023
     const isUuid =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
         orderId,
@@ -585,8 +625,22 @@ export class OrdersService {
           );
         }
       }
-      // Nếu reservation đã là RELEASED (ví dụ chuyển từ PAYMENT_FAILED -> CANCELLED),
-      // thì giữ nguyên reservation RELEASED, không hoàn kho lần hai!
+
+      // Khi đơn bị CANCELLED: Hoàn lại điểm Loyalty đã trừ (nếu có)
+      if (targetStatus === OrderStatus.CANCELLED && order.pointsRedeemed > 0) {
+        await tx.user.update({
+          where: { id: order.userId },
+          data: { loyaltyPoints: { increment: order.pointsRedeemed } },
+        });
+
+        await tx.loyaltyLog.create({
+          data: {
+            userId: order.userId,
+            points: order.pointsRedeemed,
+            reason: `Hoàn lại điểm cho đơn hàng hủy ${order.orderNumber}`.trim(),
+          },
+        });
+      }
     }
 
     // Kịch bản C: Chuyển sang PENDING (từ PAYMENT_FAILED - retry flow)
@@ -595,7 +649,6 @@ export class OrdersService {
       targetStatus === OrderStatus.PENDING
     ) {
       if (reservation.status === ReservationStatus.RELEASED) {
-        // Tái giữ kho (re-reserve): kiểm tra tồn kho và trừ lại
         const lockedIngredients = await this.lockIngredients(
           tx,
           sortedIngredientIds,
@@ -638,7 +691,6 @@ export class OrdersService {
           }
         }
 
-        // Guarded update Reservation: RELEASED -> ACTIVE
         const resUpdate = await tx.orderInventoryReservation.updateMany({
           where: {
             id: reservation.id,
@@ -662,8 +714,37 @@ export class OrdersService {
       }
     }
 
-    // Kịch bản D: Các bước Barista (PAID -> PREPARING -> READY -> COMPLETED)
-    // Reservation giữ nguyên CONSUMED, stock không thay đổi
+    // Kịch bản D: Chuyển sang COMPLETED (Barista giao hàng hoàn tất)
+    // Tự động tích điểm Loyalty (10.000 VNĐ = 1 điểm) và cập nhật lượt dùng Promotion
+    let calculatedPointsEarned = order.pointsEarned;
+    if (targetStatus === OrderStatus.COMPLETED) {
+      if (order.pointsEarned === 0) {
+        const totalAmountNum = order.total.toNumber();
+        calculatedPointsEarned = Math.floor(totalAmountNum / 10000);
+
+        if (calculatedPointsEarned > 0) {
+          await tx.user.update({
+            where: { id: order.userId },
+            data: { loyaltyPoints: { increment: calculatedPointsEarned } },
+          });
+
+          await tx.loyaltyLog.create({
+            data: {
+              userId: order.userId,
+              points: calculatedPointsEarned,
+              reason: `Tích điểm cho đơn hàng hoàn tất ${order.orderNumber}`.trim(),
+            },
+          });
+        }
+      }
+
+      if (order.promotionId) {
+        await tx.promotion.update({
+          where: { id: order.promotionId },
+          data: { usedCount: { increment: 1 } },
+        });
+      }
+    }
 
     // 6. GUARDED UPDATE TRÊN ORDER (Optimistic Concurrency Control):
     // Chỉ cập nhật nếu id, status và version khớp chính xác bản ghi đã đọc
@@ -676,6 +757,7 @@ export class OrdersService {
       data: {
         status: targetStatus,
         version: { increment: 1 },
+        pointsEarned: calculatedPointsEarned,
       },
     });
 
@@ -737,10 +819,10 @@ export class OrdersService {
     authenticatedUserId: string,
     dto: CreateOrderDto,
   ): Promise<CreateOrderResult> {
-    // 1. Xác minh authenticatedUserId có User tồn tại
+    // 1. Xác minh authenticatedUserId có User tồn tại và đọc điểm tích lũy
     const user = await tx.user.findUnique({
       where: { id: authenticatedUserId },
-      select: { id: true },
+      select: { id: true, loyaltyPoints: true },
     });
     if (!user) {
       throw new UserNotFoundException(authenticatedUserId);
@@ -797,53 +879,98 @@ export class OrdersService {
     );
 
     // 7. Xử lý Voucher / Promotion boundary (nếu có)
-    let discountAmount = new Prisma.Decimal(0);
+    let voucherDiscount = new Prisma.Decimal(0);
     let promotionId: string | undefined;
 
-    if (dto.voucherCode) {
-      const rawSubtotal = calculatedItems.reduce(
-        (acc, item) => acc.plus(item.subtotal),
-        new Prisma.Decimal(0),
-      );
+    const rawSubtotal = calculatedItems.reduce(
+      (acc, item) => acc.plus(item.subtotal),
+      new Prisma.Decimal(0),
+    );
 
-      if (this.promotionsService) {
-        try {
-          const promoResult =
-            await this.promotionsService.validateAndCalculateDiscount({
+    if (dto.voucherCode) {
+      try {
+        const promoResult =
+          await this.promotionsService.validateAndCalculateDiscount(
+            {
               code: dto.voucherCode,
               orderAmount: rawSubtotal.toNumber(),
-            });
-          discountAmount = new Prisma.Decimal(promoResult.discountAmount);
-          promotionId = promoResult.promotionId;
-        } catch (err: unknown) {
-          if (
-            err instanceof BadRequestException ||
-            err instanceof NotFoundException
-          ) {
-            throw new InvalidVoucherException(
-              dto.voucherCode,
-              (err as Error).message,
-            );
-          }
-          throw err;
-        }
-      } else {
-        throw new InvalidVoucherException(
-          dto.voucherCode,
-          'Dịch vụ khuyến mãi hiện không khả dụng.',
-        );
+            },
+            tx,
+          );
+        voucherDiscount = new Prisma.Decimal(promoResult.discountAmount);
+        promotionId = promoResult.promotionId;
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : 'Voucher không hợp lệ';
+        throw new InvalidVoucherException(dto.voucherCode, message);
       }
     }
 
-    // 8. Tính giá tổng đơn hàng và cap discount an toàn (0 <= discount <= subtotal)
+    // 8. Xử lý Đổi điểm Loyalty (pointsToRedeem: 1 điểm = 1.000 VNĐ)
+    let pointsRedeemed = 0;
+    let pointsDiscount = new Prisma.Decimal(0);
+
+    if (dto.pointsToRedeem && dto.pointsToRedeem > 0) {
+      if (user.loyaltyPoints < dto.pointsToRedeem) {
+        throw new BadRequestException(
+          `Số điểm tích lũy không đủ để thực hiện đổi điểm (hiện có: ${user.loyaltyPoints}, yêu cầu: ${dto.pointsToRedeem})`,
+        );
+      }
+
+      // Không cho phép giảm total xuống dưới 0
+      const remainingBalance = Prisma.Decimal.max(
+        new Prisma.Decimal(0),
+        rawSubtotal.minus(voucherDiscount),
+      );
+      const maxPointsCanUse = Math.ceil(remainingBalance.toNumber() / 1000);
+      pointsRedeemed = Math.min(dto.pointsToRedeem, maxPointsCanUse);
+      pointsDiscount = new Prisma.Decimal(pointsRedeemed * 1000);
+
+      // Trừ điểm user bằng atomic guarded update chống race condition đồng thời
+      if (pointsRedeemed > 0) {
+        const userUpdateResult = await tx.user.updateMany({
+          where: {
+            id: authenticatedUserId,
+            loyaltyPoints: { gte: pointsRedeemed },
+          },
+          data: {
+            loyaltyPoints: { decrement: pointsRedeemed },
+          },
+        });
+
+        if (userUpdateResult.count !== 1) {
+          throw new BadRequestException(
+            `Số điểm tích lũy không đủ để thực hiện đổi điểm (yêu cầu: ${pointsRedeemed})`,
+          );
+        }
+
+        await tx.loyaltyLog.create({
+          data: {
+            userId: authenticatedUserId,
+            points: -pointsRedeemed,
+            reason: `Sử dụng ${pointsRedeemed} điểm cho đơn hàng`.trim(),
+          },
+        });
+      }
+    }
+
+    // Tổng giảm giá = voucher discount + loyalty points discount
+    const totalDiscount = voucherDiscount.plus(pointsDiscount);
+
+    // 9. Tính tổng thanh toán cuối cùng
     const calculatedPricing = calculateOrderPricing(
       calculatedItems,
-      discountAmount,
-      { voucherCode: dto.voucherCode, promotionId },
+      totalDiscount,
+      {
+        voucherCode: dto.voucherCode,
+        promotionId,
+      },
     );
 
-    // 9. Tổng hợp nhu cầu nguyên liệu cho toàn bộ đơn hàng
+    // 10. Tính toán tổng định lượng nguyên liệu cần thiết (aggregate requirements)
     const ingredientInputs = validatedItems.map((item) => ({
+      productId: item.product.id,
+      productName: item.product.name,
       quantity: item.quantity,
       recipes: item.options.flatMap((opt) =>
         opt.recipes.map((r) => ({
@@ -860,13 +987,13 @@ export class OrdersService {
       (r) => r.ingredientId,
     );
 
-    // 10. Khóa các dòng Ingredient bằng SELECT ... FOR UPDATE theo thứ tự id tăng dần
+    // 11. Khóa các dòng Ingredient bằng SELECT ... FOR UPDATE theo thứ tự id tăng dần
     const lockedIngredients = await this.lockIngredients(
       tx,
       sortedIngredientIds,
     );
 
-    // 11. Kiểm tra đủ tồn kho cho toàn bộ nguyên liệu
+    // 12. Kiểm tra đủ tồn kho cho toàn bộ nguyên liệu
     for (const req of aggregatedRequirements) {
       const ingredient = lockedIngredients.get(req.ingredientId);
       if (!ingredient) {
@@ -883,7 +1010,7 @@ export class OrdersService {
       }
     }
 
-    // 12. Trừ tồn kho và tăng version với optimistic lock guard
+    // 13. Trừ tồn kho và tăng version với optimistic lock guard
     for (const req of aggregatedRequirements) {
       const ingredient = lockedIngredients.get(req.ingredientId)!;
       const newStock = ingredient.stock.minus(req.totalAmount);
@@ -905,7 +1032,7 @@ export class OrdersService {
       }
     }
 
-    // 13. Tạo Order trạng thái PENDING
+    // 14. Tạo Order trạng thái PENDING
     const orderNumber = generateOrderNumber();
     const order = await tx.order.create({
       data: {
@@ -917,12 +1044,14 @@ export class OrdersService {
         total: calculatedPricing.total,
         voucherCode: calculatedPricing.voucherCode ?? null,
         promotionId: calculatedPricing.promotionId ?? null,
+        pointsEarned: 0,
+        pointsRedeemed,
         notes: dto.notes ?? null,
         version: 1,
       },
     });
 
-    // 14. Tạo OrderItem, OrderItemOption và optionsSnapshot
+    // 15. Tạo OrderItem, OrderItemOption và optionsSnapshot
     for (const item of calculatedPricing.items) {
       const orderItem = await tx.orderItem.create({
         data: {
@@ -950,7 +1079,7 @@ export class OrdersService {
       }
     }
 
-    // 15. Tạo đúng 1 OrderInventoryReservation trạng thái ACTIVE
+    // 16. Tạo đúng 1 OrderInventoryReservation trạng thái ACTIVE
     const reservation = await tx.orderInventoryReservation.create({
       data: {
         orderId: order.id,
@@ -959,7 +1088,7 @@ export class OrdersService {
       },
     });
 
-    // 16. Tạo OrderReservationLine đã cộng gộp theo ingredientId
+    // 17. Tạo OrderReservationLine đã cộng gộp theo ingredientId
     for (const req of aggregatedRequirements) {
       await tx.orderReservationLine.create({
         data: {
@@ -970,7 +1099,7 @@ export class OrdersService {
       });
     }
 
-    // 17. Tạo OrderStatusHistory đầu tiên (null -> PENDING)
+    // 18. Tạo OrderStatusHistory đầu tiên (null -> PENDING)
     await tx.orderStatusHistory.create({
       data: {
         orderId: order.id,
@@ -981,7 +1110,7 @@ export class OrdersService {
       },
     });
 
-    // 18. Ánh xạ trả về kết quả theo typed client contract (chuẩn hóa đầy đủ orderId, items và options snapshot)
+    // 19. Ánh xạ trả về kết quả theo typed client contract
     const responseItems: CreateOrderItemResponse[] = calculatedPricing.items.map(
       (item) => ({
         productId: item.productId,
@@ -998,94 +1127,85 @@ export class OrdersService {
   }
 
   /**
-   * Khóa bi quan (pessimistic row locking) các dòng nguyên liệu bằng SELECT ... FOR UPDATE.
-   * Sắp xếp id tăng dần để loại bỏ hoàn toàn khả năng deadlock giữa các transaction chạy song song.
+   * Khóa bi quan (pessimistic locking) các dòng trong bảng `ingredients` bằng câu lệnh SQL
+   * SELECT ... FOR UPDATE theo thứ tự ID tăng dần để ngăn chặn triệt để deadlock.
    */
-  protected async lockIngredients(
+  private async lockIngredients(
     tx: Prisma.TransactionClient,
-    sortedIngredientIds: string[],
-  ): Promise<
-    Map<
-      string,
-      { id: string; name: string; stock: Prisma.Decimal; version: number }
-    >
-  > {
-    if (sortedIngredientIds.length === 0) {
+    ingredientIds: string[],
+  ): Promise<Map<string, { id: string; name: string; stock: Prisma.Decimal; version: number }>> {
+    if (ingredientIds.length === 0) {
       return new Map();
     }
 
-    const rows = await tx.$queryRaw<
-      Array<{
-        id: string;
-        name: string;
-        stock: Prisma.Decimal;
-        version: number;
-      }>
+    // Bắt buộc sắp xếp ID tăng dần theo bảng mã từ điển để thứ tự khóa tài nguyên là tất định
+    const sortedIds = [...ingredientIds].sort();
+
+    const lockedRows = await tx.$queryRaw<
+      Array<{ id: string; name: string; stock: Prisma.Decimal; version: number }>
     >`
-      SELECT id, name, stock, version
-      FROM ingredients
-      WHERE id IN (${Prisma.join(
-        sortedIngredientIds.map((id) => Prisma.sql`${id}::uuid`),
-      )})
-      ORDER BY id ASC
+      SELECT "id", "name", "stock", "version"
+      FROM "ingredients"
+      WHERE "id" = ANY(${sortedIds}::uuid[])
+      ORDER BY "id" ASC
       FOR UPDATE
     `;
 
-    const map = new Map<
-      string,
-      { id: string; name: string; stock: Prisma.Decimal; version: number }
-    >();
-
-    for (const row of rows) {
-      map.set(row.id, {
-        id: row.id,
-        name: row.name,
-        stock: new Prisma.Decimal(row.stock),
-        version: row.version,
-      });
-    }
-
-    return map;
+    return new Map(lockedRows.map((row) => [row.id, row]));
   }
 
   /**
-   * Phân loại lỗi nghiệp vụ / validation: tuyệt đối không được retry.
+   * Phân loại lỗi: Xác định xem lỗi có phải do vi phạm logic nghiệp vụ hay validation không thể retry.
    */
   private isNonRetryableError(error: unknown): boolean {
-    return (
-      error instanceof UserNotFoundException ||
+    if (
       error instanceof InsufficientIngredientStockException ||
+      error instanceof IngredientNotFoundException ||
       error instanceof InvalidVoucherException ||
-      error instanceof OrderNotFoundException ||
-      error instanceof InvalidOrderTransitionException ||
-      error instanceof OrderActionForbiddenException ||
-      error instanceof OrderCancellationNotAllowedException ||
-      error instanceof ReservationAlreadyConsumedException ||
-      error instanceof ReservationNotFoundException ||
-      error instanceof OrderStateConflictException ||
-      error instanceof ReservationStateConflictException ||
-      error instanceof ForbiddenException ||
+      error instanceof UserNotFoundException ||
       error instanceof BadRequestException ||
-      error instanceof NotFoundException
-    );
+      error instanceof NotFoundException ||
+      error instanceof ForbiddenException
+    ) {
+      return true;
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      // P2025: Record to update not found (không retry)
+      // P2003: Foreign key constraint failed (không retry)
+      if (['P2025', 'P2003'].includes(error.code)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
-   * Phân loại lỗi xung đột concurrency có thể retry.
+   * Xác định xem lỗi có thuộc loại concurrency conflict có thể giải quyết bằng retry hay không:
+   * - 40001: Transaction serialization failure.
+   * - 40P01: Deadlock detected.
+   * - P2002: Unique constraint violation (ví dụ trùng mã orderNumber ngẫu nhiên hiếm gặp).
+   * - P2034: Prisma transaction write conflict.
    */
   private isRetryableConcurrencyError(error: unknown): boolean {
     if (error instanceof ConcurrentStockConflictException) {
       return true;
     }
+
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      // P2034: Transaction failed due to a write conflict or a deadlock
-      // P2002: Unique constraint failed (trường hợp trùng mã orderNumber hiếm gặp)
-      return error.code === 'P2034' || error.code === 'P2002';
+      if (['P2002', 'P2034'].includes(error.code)) {
+        return true;
+      }
     }
 
-    // PostgreSQL error codes: 40001 (serialization_failure), 40P01 (deadlock_detected)
-    const err = error as { code?: string };
-    if (err && (err.code === '40001' || err.code === '40P01')) {
+    const errorStr = String(error);
+    if (
+      errorStr.includes('40001') ||
+      errorStr.includes('40P01') ||
+      errorStr.includes('deadlock detected') ||
+      errorStr.includes('could not serialize access')
+    ) {
       return true;
     }
 

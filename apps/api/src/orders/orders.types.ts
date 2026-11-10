@@ -223,3 +223,156 @@ export function extractAuthenticatedActor(
     role,
   };
 }
+
+/**
+ * ==============================================================================
+ * CUSTOMER RESPONSE CONTRACTS (Task 5.1 - Privacy Guard)
+ * ==============================================================================
+ * Tuyệt đối không trả về:
+ * - reservation, reservation lines
+ * - ingredientId, ingredient amounts, stock
+ * - version nội bộ, passwordHash, sessionVersion, loyaltyLog
+ */
+export interface CustomerOrderItemOptionResponse {
+  id: string;
+  productOptionId: string;
+  optionNameSnapshot: string;
+  optionType: OptionType;
+  extraPriceSnapshot: number;
+}
+
+export interface CustomerOrderItemResponse {
+  id: string;
+  productId: string;
+  productName: string;
+  productNameSnapshot: string;
+  unitPrice: number;
+  unitPriceSnapshot: number;
+  quantity: number;
+  subtotal: number;
+  notes: string | null;
+  options: CustomerOrderItemOptionResponse[];
+}
+
+export interface CustomerOrderResponse {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  status: OrderStatus;
+  subtotal: number;
+  discount: number;
+  total: number;
+  totalAmount: number;
+  discountAmount: number;
+  finalAmount: number;
+  voucherCode: string | null;
+  pointsEarned: number;
+  pointsRedeemed: number;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  promotion: {
+    code: string;
+    description: string | null;
+  } | null;
+  items: CustomerOrderItemResponse[];
+}
+
+export function mapCustomerOrderResponse(order: {
+  id: string;
+  orderNumber: string;
+  status: OrderStatus;
+  subtotal: Prisma.Decimal | number;
+  discount: Prisma.Decimal | number;
+  total: Prisma.Decimal | number;
+  voucherCode?: string | null;
+  pointsEarned: number;
+  pointsRedeemed: number;
+  notes?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  promotion?: { code: string; description: string | null } | null;
+  items?: Array<{
+    id: string;
+    productId: string;
+    productNameSnapshot: string;
+    unitPriceSnapshot: Prisma.Decimal | number;
+    quantity: number;
+    subtotal: Prisma.Decimal | number;
+    notes?: string | null;
+    orderItemOptions?: Array<{
+      id: string;
+      productOptionId: string;
+      optionNameSnapshot: string;
+      optionType: OptionType;
+      extraPriceSnapshot: Prisma.Decimal | number;
+    }>;
+  }>;
+}): CustomerOrderResponse {
+  const subtotalNum =
+    typeof order.subtotal === 'number'
+      ? order.subtotal
+      : Number(order.subtotal);
+  const discountNum =
+    typeof order.discount === 'number'
+      ? order.discount
+      : Number(order.discount);
+  const totalNum =
+    typeof order.total === 'number' ? order.total : Number(order.total);
+
+  return {
+    id: order.id,
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    subtotal: subtotalNum,
+    discount: discountNum,
+    total: totalNum,
+    totalAmount: subtotalNum,
+    discountAmount: discountNum,
+    finalAmount: totalNum,
+    voucherCode: order.voucherCode ?? null,
+    pointsEarned: order.pointsEarned,
+    pointsRedeemed: order.pointsRedeemed,
+    notes: order.notes ?? null,
+    createdAt: order.createdAt.toISOString(),
+    updatedAt: order.updatedAt.toISOString(),
+    promotion: order.promotion
+      ? {
+          code: order.promotion.code,
+          description: order.promotion.description ?? null,
+        }
+      : null,
+    items: (order.items ?? []).map((item) => {
+      const unitPriceNum =
+        typeof item.unitPriceSnapshot === 'number'
+          ? item.unitPriceSnapshot
+          : Number(item.unitPriceSnapshot);
+      const itemSubtotalNum =
+        typeof item.subtotal === 'number'
+          ? item.subtotal
+          : Number(item.subtotal);
+      return {
+        id: item.id,
+        productId: item.productId,
+        productName: item.productNameSnapshot,
+        productNameSnapshot: item.productNameSnapshot,
+        unitPrice: unitPriceNum,
+        unitPriceSnapshot: unitPriceNum,
+        quantity: item.quantity,
+        subtotal: itemSubtotalNum,
+        notes: item.notes ?? null,
+        options: (item.orderItemOptions ?? []).map((opt) => ({
+          id: opt.id,
+          productOptionId: opt.productOptionId,
+          optionNameSnapshot: opt.optionNameSnapshot,
+          optionType: opt.optionType,
+          extraPriceSnapshot:
+            typeof opt.extraPriceSnapshot === 'number'
+              ? opt.extraPriceSnapshot
+              : Number(opt.extraPriceSnapshot),
+        })),
+      };
+    }),
+  };
+}

@@ -82,7 +82,7 @@ describe('MenuView', () => {
     const card = screen.getByTestId('menu-card-PROD_01');
     expect(within(card).getByRole('link', { name: 'Bạc Xỉu 3 Tầng Sài Gòn' })).toHaveAttribute(
       'href',
-      '/thuc-don/bac-xiu-3-tang-sai-gon',
+      '/products/bac-xiu-3-tang-sai-gon',
     );
   });
 

@@ -2,9 +2,12 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsInt,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
@@ -29,4 +32,11 @@ export class CreateOrderDto {
   @MaxLength(1000, { message: 'notes của đơn hàng không được vượt quá 1000 ký tự' })
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   notes?: string;
+
+  @IsOptional()
+  @IsInt({ message: 'pointsToRedeem phải là số nguyên' })
+  @Min(0, { message: 'pointsToRedeem không được là số âm' })
+  @Max(100000, { message: 'pointsToRedeem không được vượt quá 100,000' })
+  @Type(() => Number)
+  pointsToRedeem?: number;
 }

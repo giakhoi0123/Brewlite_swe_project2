@@ -6,7 +6,11 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ValidatePromotionDto } from './dto/validate-promotion.dto';
 import { CreatePromotionDto } from './dto/create-promotion.dto';
-import { DiscountType } from '@prisma/client';
+import { DiscountType, Prisma } from '@prisma/client';
+
+export type PromotionDatabaseClient =
+  | Pick<PrismaService, 'promotion'>
+  | Prisma.TransactionClient;
 
 @Injectable()
 export class PromotionsService {
@@ -52,9 +56,12 @@ export class PromotionsService {
     });
   }
 
-  async validateAndCalculateDiscount(dto: ValidatePromotionDto) {
+  async validateAndCalculateDiscount(
+    dto: ValidatePromotionDto,
+    db: PromotionDatabaseClient = this.prisma,
+  ) {
     const code = dto.code.toUpperCase();
-    const promotion = await this.prisma.promotion.findUnique({
+    const promotion = await db.promotion.findUnique({
       where: { code },
     });
 
@@ -62,8 +69,11 @@ export class PromotionsService {
       throw new NotFoundException('Mã khuyến mãi không tồn tại hoặc đã bị vô hiệu hóa');
     }
 
+    // Cộng thêm 1 phút buffer vào now để tránh lệch millisecond/múi giờ khi vừa tạo mã xong
     const now = new Date();
-    if (now < promotion.startDate || now > promotion.endDate) {
+    const validFrom = new Date(now.getTime() + 60 * 1000);
+
+    if (validFrom < promotion.startDate || now > promotion.endDate) {
       throw new BadRequestException('Mã khuyến mãi chưa đến hạn hoặc đã hết hạn sử dụng');
     }
 

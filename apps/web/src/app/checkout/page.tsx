@@ -30,7 +30,7 @@ import { formatCurrency } from '../../utils/format';
 export default function CheckoutPage() {
   const router = useRouter();
   const { user, token, loading: authLoading } = useAuth();
-  const { items, voucherCode, isReady, clearCart } = useCart();
+  const { items, voucherCode, isReady, clearCart, isChecking, canCheckout } = useCart();
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('WALLET');
   const [mockScenario, setMockScenario] = useState<string>('SUCCESS');
@@ -73,7 +73,7 @@ export default function CheckoutPage() {
             Đăng nhập ngay
           </Link>
           <Link
-            href="/thuc-don"
+            href="/products"
             className="px-6 py-3 rounded-full bg-surface-container text-on-surface font-display text-label-lg font-medium hover:bg-surface-container-high transition-all"
           >
             Xem thực đơn
@@ -129,7 +129,7 @@ export default function CheckoutPage() {
 
           <div className="flex flex-col sm:flex-row gap-3 w-full">
             <Link
-              href="/thuc-don"
+              href="/products"
               className="flex-1 py-3 px-4 rounded-full bg-primary text-on-primary font-display text-label-lg font-bold text-center hover:bg-primary/90 transition-all shadow-md"
             >
               Tiếp tục đặt món
@@ -160,7 +160,7 @@ export default function CheckoutPage() {
           Hãy chọn các món cà phê yêu thích từ thực đơn để tiếp tục thanh toán.
         </p>
         <Link
-          href="/thuc-don"
+          href="/products"
           className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-primary text-on-primary font-display text-label-lg font-bold hover:bg-primary/90 transition-all shadow-md"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -173,7 +173,7 @@ export default function CheckoutPage() {
   // 5. Hàm thực hiện thanh toán tuân thủ Sequence Checkout Diagram & ADR-004
   const handleCheckoutSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitting) return;
+    if (submitting || isChecking || !canCheckout) return;
 
     setSubmitting(true);
     setErrorMessage(null);
@@ -465,7 +465,7 @@ export default function CheckoutPage() {
             <button
               type="button"
               onClick={handleCheckoutSubmit}
-              disabled={submitting}
+              disabled={submitting || isChecking || !canCheckout}
               className="w-full py-3.5 px-4 rounded-full bg-primary text-on-primary font-display text-label-lg font-bold flex items-center justify-center gap-2 hover:bg-primary/90 active:scale-[0.99] transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed mt-2"
             >
               {submitting ? (

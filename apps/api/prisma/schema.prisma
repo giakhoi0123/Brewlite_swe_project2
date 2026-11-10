@@ -37,6 +37,7 @@ enum ReservationStatus {
 
 enum OrderStatus {
   PENDING
+  PROCESSING
   PAID
   PAYMENT_FAILED
   PREPARING
@@ -184,19 +185,21 @@ model LoyaltyLog {
 }
 
 model Order {
-  id          String      @id @default(uuid()) @db.Uuid
-  orderNumber String      @unique @map("order_number") @db.VarChar(50)
-  userId      String      @map("user_id") @db.Uuid
-  status      OrderStatus @default(PENDING)
-  version     Int         @default(1)
-  subtotal    Decimal     @db.Decimal(10, 2)
-  discount    Decimal     @default(0) @db.Decimal(10, 2)
-  total       Decimal     @db.Decimal(10, 2)
-  voucherCode String?     @map("voucher_code") @db.VarChar(50)
-  promotionId String?     @map("promotion_id") @db.Uuid
-  notes       String?     @db.Text
-  createdAt   DateTime    @default(now()) @map("created_at")
-  updatedAt   DateTime    @updatedAt @map("updated_at")
+  id             String      @id @default(uuid()) @db.Uuid
+  orderNumber    String      @unique @map("order_number") @db.VarChar(50)
+  userId         String      @map("user_id") @db.Uuid
+  status         OrderStatus @default(PENDING)
+  version        Int         @default(1)
+  subtotal       Decimal     @db.Decimal(10, 2)
+  discount       Decimal     @default(0) @db.Decimal(10, 2)
+  total          Decimal     @db.Decimal(10, 2)
+  voucherCode    String?     @map("voucher_code") @db.VarChar(50)
+  promotionId    String?     @map("promotion_id") @db.Uuid
+  pointsEarned   Int         @default(0) @map("points_earned")
+  pointsRedeemed Int         @default(0) @map("points_redeemed")
+  notes          String?     @db.Text
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
 
   user          User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
   promotion     Promotion?                 @relation(fields: [promotionId], references: [id], onDelete: SetNull)
@@ -205,6 +208,7 @@ model Order {
   statusHistory OrderStatusHistory[]
 
   @@index([userId])
+  @@index([promotionId])
   @@index([status])
   @@index([createdAt])
   @@map("orders")

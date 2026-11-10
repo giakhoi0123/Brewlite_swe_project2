@@ -15,6 +15,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { PromotionsService } from '../promotions/promotions.service';
 import { BaristaController } from './barista.controller';
 import { BaristaQueueQueryDto } from './dto/barista-queue-query.dto';
 import { mapBaristaOrderResponse } from './order-pricing';
@@ -43,6 +44,9 @@ describe('Barista Controller & Queue Unit Tests (Task 5.1 - Section VI - Lê Qua
   const baristaUserId = '11111111-1111-1111-1111-111111111111';
   const customerUserId = '22222222-2222-2222-2222-222222222222';
   const sampleOrderId = '33333333-3333-3333-3333-333333333333';
+  const mockPromotionsService = {
+    validateAndCalculateDiscount: jest.fn(),
+  } as unknown as PromotionsService;
 
   const mockBaristaOrderResponse: BaristaOrderResponse = {
     id: sampleOrderId,
@@ -207,7 +211,7 @@ describe('Barista Controller & Queue Unit Tests (Task 5.1 - Section VI - Lê Qua
       },
     };
 
-    const realService = new OrdersService(mockPrisma as unknown as PrismaService);
+    const realService = new OrdersService(mockPrisma as unknown as PrismaService, mockPromotionsService);
     const res = await realService.getBaristaQueue({});
     expect(res.data).toEqual([]);
   });
@@ -223,7 +227,7 @@ describe('Barista Controller & Queue Unit Tests (Task 5.1 - Section VI - Lê Qua
       },
     };
 
-    const realService = new OrdersService(mockPrisma as unknown as PrismaService);
+    const realService = new OrdersService(mockPrisma as unknown as PrismaService, mockPromotionsService);
     await realService.getBaristaQueue({});
   });
 
@@ -238,7 +242,7 @@ describe('Barista Controller & Queue Unit Tests (Task 5.1 - Section VI - Lê Qua
       },
     };
 
-    const realService = new OrdersService(mockPrisma as unknown as PrismaService);
+    const realService = new OrdersService(mockPrisma as unknown as PrismaService, mockPromotionsService);
     await realService.getBaristaQueue({});
   });
 
@@ -255,7 +259,7 @@ describe('Barista Controller & Queue Unit Tests (Task 5.1 - Section VI - Lê Qua
       },
     };
 
-    const realService = new OrdersService(mockPrisma as unknown as PrismaService);
+    const realService = new OrdersService(mockPrisma as unknown as PrismaService, mockPromotionsService);
     const res = await realService.getBaristaQueue({ page: 2, limit: 20 });
     expect(res.meta).toEqual({
       total: 45,
@@ -393,7 +397,7 @@ describe('Barista Controller & Queue Unit Tests (Task 5.1 - Section VI - Lê Qua
       }),
     };
 
-    const realService = new OrdersService(mockPrisma as unknown as PrismaService);
+    const realService = new OrdersService(mockPrisma as unknown as PrismaService, mockPromotionsService);
     const result = await realService.transitionOrderStatus(
       sampleOrderId,
       OrderStatus.PREPARING, // Already PREPARING!
@@ -434,7 +438,7 @@ describe('Barista Controller & Queue Unit Tests (Task 5.1 - Section VI - Lê Qua
       }),
     };
 
-    const realService = new OrdersService(mockPrisma as unknown as PrismaService);
+    const realService = new OrdersService(mockPrisma as unknown as PrismaService, mockPromotionsService);
     await expect(
       realService.transitionOrderStatus(
         sampleOrderId,
@@ -456,7 +460,7 @@ describe('Barista Controller & Queue Unit Tests (Task 5.1 - Section VI - Lê Qua
       }),
     };
 
-    const realService = new OrdersService(mockPrisma as unknown as PrismaService);
+    const realService = new OrdersService(mockPrisma as unknown as PrismaService, mockPromotionsService);
     await expect(
       realService.transitionOrderStatus(
         sampleOrderId,
@@ -593,7 +597,7 @@ describe('Barista Controller & Queue Unit Tests (Task 5.1 - Section VI - Lê Qua
         },
       };
 
-      const service = new OrdersService(mockPrisma as unknown as PrismaService);
+      const service = new OrdersService(mockPrisma as unknown as PrismaService, mockPromotionsService);
       const res = await service.getBaristaQueue({});
       expect(res.data.length).toBe(2);
       expect(res.data[0].id).toBe('11111111-1111-1111-1111-111111111111');
