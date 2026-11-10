@@ -102,6 +102,12 @@ describe('Products API (e2e)', () => {
     const nonExistentUuid = 'a0000000-0000-0000-0000-999999999999';
 
     it('should return 200 and product detail with options and inventory for valid seed ID', async () => {
+      // Seed 'Cà phê đen đá' (a0000000-0000-0000-0000-000000000001):
+      // Robusta stock = 40,000g, Size M recipe = 20g -> capacity = 40,000 / 20 = 2000 cups
+      const expectedRobustaStock = 40000;
+      const sizeMRecipeAmount = 20;
+      const expectedRecipeCapacity = Math.floor(expectedRobustaStock / sizeMRecipeAmount);
+
       const response = await request(app.getHttpServer())
         .get(`/api/products/${validSeedId}`)
         .expect(200);
@@ -129,9 +135,9 @@ describe('Products API (e2e)', () => {
           },
         ]),
         inventory: {
-          quantity: 150,
+          quantity: expectedRecipeCapacity,
           reserved: 0,
-          availableStock: 150,
+          availableStock: expectedRecipeCapacity,
         },
       });
       expect(response.body.options).toHaveLength(3);

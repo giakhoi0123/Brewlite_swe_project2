@@ -25,4 +25,3 @@ export interface ProductDetail extends Product {
   options: ProductOption[];
   inventory: ProductInventory | null;
 }
-
