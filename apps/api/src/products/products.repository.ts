@@ -3,12 +3,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 
 export type ProductWithInventory = Prisma.ProductGetPayload<{
-  include: { inventory: { select: { quantity: true; reserved: true } }; options: { include: { recipes: { include: { ingredient: true } } } } };
+  include: {
+    inventory: { select: { quantity: true; reserved: true } };
+    options: { include: { recipes: { include: { ingredient: true } } } };
+  };
 }>;
 
-export type ProductWithDetails = ProductWithInventory & {
-
-};
+export type ProductWithDetails = ProductWithInventory;
 
 @Injectable()
 export class ProductsRepository {
@@ -26,7 +27,10 @@ export class ProductsRepository {
 
     return this.prisma.product.findMany({
       where: whereClause,
-      include: { inventory: { select: { quantity: true, reserved: true } }, options: { include: { recipes: { include: { ingredient: true } } } } },
+      include: {
+        inventory: { select: { quantity: true, reserved: true } },
+        options: { include: { recipes: { include: { ingredient: true } } } },
+      },
       orderBy: {
         name: 'asc',
       },

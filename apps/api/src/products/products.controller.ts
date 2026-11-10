@@ -1,5 +1,3 @@
-import { AvailabilityService } from './availability.service';
-import { CheckAvailabilityDto } from './dto/check-availability.dto';
 import {
   Controller,
   Post,
@@ -11,13 +9,18 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
+import { AvailabilityService } from './availability.service';
 import { GetProductsQueryDto } from './dto/get-products-query.dto';
 import { ProductResponseDto } from './dto/product-response.dto';
 import { ProductDetailResponseDto } from './dto/product-detail-response.dto';
+import { CheckAvailabilityDto } from './dto/check-availability.dto';
 
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService, private readonly availabilityService: AvailabilityService) {}
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly availabilityService: AvailabilityService,
+  ) {}
 
   @Post('availability')
   checkAvailability(@Body() body: CheckAvailabilityDto) {

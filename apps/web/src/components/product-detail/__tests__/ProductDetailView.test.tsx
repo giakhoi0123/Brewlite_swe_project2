@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CartProvider } from '../../cart/CartProvider';
 import { FavoritesProvider } from '../../favorites/FavoritesProvider';
@@ -6,6 +6,21 @@ import { ToastProvider } from '../../ui/ToastProvider';
 import { ProductDetailView } from '../ProductDetailView';
 import { getProductBySlug, MOCK_PRODUCTS } from '../../../data/menu-products';
 import { CartProbe } from '../../../test-utils/CartProbe';
+
+jest.mock('../../../services/product-api', () => ({
+  ...jest.requireActual('../../../services/product-api'),
+  checkCartAvailability: jest.fn().mockImplementation(async (items: any[]) => ({
+    canOrder: true,
+    items: items.map((it: any, idx: number) => ({
+      index: idx,
+      productId: it.productId,
+      sizeId: it.sizeId ?? it.customization?.size ?? 'size-default',
+      requestedQuantity: it.quantity,
+      availableQuantity: 99,
+      canOrder: true,
+    })),
+  })),
+}));
 
 const push = jest.fn();
 jest.mock('next/navigation', () => ({
@@ -66,7 +81,7 @@ describe('ProductDetailView', () => {
     renderDetail();
     await userEvent.click(screen.getByRole('button', { name: /MUA NGAY/ }));
     expect(screen.getByTestId('cart-probe')).toHaveTextContent('1 ly · 25.000');
-    expect(push).toHaveBeenCalledWith('/gio-hang');
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/gio-hang'));
   });
 
   it('thêm nhanh món gợi ý', async () => {
