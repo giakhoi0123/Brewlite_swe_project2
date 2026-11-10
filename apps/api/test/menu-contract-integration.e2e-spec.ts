@@ -42,9 +42,12 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
     const persistedProducts = await prisma.product.findMany({
       orderBy: { name: 'asc' },
       include: {
-        inventory: true,
         options: {
-          include: { recipes: { include: { ingredient: true } } },
+          include: {
+            recipes: {
+              include: { ingredient: true },
+            },
+          },
         },
       },
     });
@@ -58,21 +61,30 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
     expect(listRes.body.map((product: { id: string }) => product.id))
       .toEqual(persistedProducts.map(product => product.id));
 
-    for (const persistedProduct of persistedProducts) {
-      const sizes = persistedProduct.options.filter(option => option.type === 'SIZE');
-      const capacity = Math.max(
+    const calculateCapacity = (product: typeof persistedProducts[0]) => {
+      const sizes = product.options.filter((o) => o.type === 'SIZE');
+      return Math.max(
         0,
-        ...sizes.map(size => size.recipes.length
-          ? Math.min(...size.recipes.map(recipe =>
-              recipe.amount.gt(0)
-                ? recipe.ingredient.stock.div(recipe.amount).floor().toNumber()
-                : 0,
-            ))
-          : 0),
+        ...sizes.map((size) =>
+          size.recipes.length
+            ? Math.min(
+                ...size.recipes.map((r) =>
+                  Number(r.amount) > 0
+                    ? Math.floor(Number(r.ingredient.stock) / Number(r.amount))
+                    : 0,
+                ),
+              )
+            : 0,
+        ),
       );
+    };
+
+    for (const persistedProduct of persistedProducts) {
       const apiProduct = listRes.body.find(
         (product: { id: string }) => product.id === persistedProduct.id,
       );
+
+      const capacity = calculateCapacity(persistedProduct);
 
       expect(apiProduct).toEqual({
         id: persistedProduct.id,
@@ -86,30 +98,38 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
     }
   });
 
-  it('maps PostgreSQL options and inventory to the frontend detail contract', async () => {
+  it('maps PostgreSQL options and recipe-based inventory compatibility to the frontend detail contract', async () => {
     const productId = 'a0000000-0000-0000-0000-000000000008';
     const persistedProduct = await prisma.product.findUnique({
       where: { id: productId },
       include: {
         options: {
-          include: { recipes: { include: { ingredient: true } } },
+          include: {
+            recipes: {
+              include: { ingredient: true },
+            },
+          },
         },
-        inventory: true,
       },
     });
 
     expect(persistedProduct).not.toBeNull();
 
-    const sizes = persistedProduct!.options.filter(option => option.type === 'SIZE');
-    const capacity = Math.max(
+    // Capacity calculated from sizes & bottleneck ingredient
+    const sizes = persistedProduct!.options.filter((o) => o.type === 'SIZE');
+    const expectedRecipeCapacity = Math.max(
       0,
-      ...sizes.map(size => size.recipes.length
-        ? Math.min(...size.recipes.map(recipe =>
-            recipe.amount.gt(0)
-              ? recipe.ingredient.stock.div(recipe.amount).floor().toNumber()
-              : 0,
-          ))
-        : 0),
+      ...sizes.map((size) =>
+        size.recipes.length
+          ? Math.min(
+              ...size.recipes.map((r) =>
+                Number(r.amount) > 0
+                  ? Math.floor(Number(r.ingredient.stock) / Number(r.amount))
+                  : 0,
+              ),
+            )
+          : 0,
+      ),
     );
 
     const detailRes = await request(app.getHttpServer())
@@ -124,9 +144,9 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
       isAvailable: persistedProduct!.isAvailable,
       createdAt: persistedProduct!.createdAt.toISOString(),
       inventory: {
-        quantity: capacity,
+        quantity: expectedRecipeCapacity,
         reserved: 0,
-        availableStock: capacity,
+        availableStock: expectedRecipeCapacity,
       },
     });
     expect(Array.isArray(detailRes.body.options)).toBe(true);

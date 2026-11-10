@@ -18,7 +18,7 @@ function createHarness(initialStatus: OrderStatus = OrderStatus.PENDING) {
   const order = {
     id: ORDER_ID,
     userId: USER_ID,
-    finalAmount: new Prisma.Decimal(58000),
+    total: new Prisma.Decimal(58000),
     status: initialStatus,
   };
   const payments: any[] = [];
@@ -73,7 +73,7 @@ function createHarness(initialStatus: OrderStatus = OrderStatus.PENDING) {
   const gateway: PaymentGatewayPort = { process };
   const service = new PaymentsService(prisma, gateway);
 
-  return { service, process, order, payments };
+  return { service, process, order, payments, paymentFindUnique };
 }
 
 async function expectPaymentError(
@@ -113,6 +113,35 @@ describe("PaymentsService", () => {
       FIRST_KEY,
       { orderId: ORDER_ID, method: "WALLET" },
       "FAILURE",
+    );
+
+    expect(replay).toEqual(first);
+    expect(payments).toHaveLength(1);
+    expect(process).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers a same-key race after another request marks the order paid", async () => {
+    const { service, process, payments, paymentFindUnique } = createHarness();
+    process.mockResolvedValue({
+      paymentStatus: "PAID",
+      resultCode: "PAYMENT_PAID",
+      retryable: false,
+      processedAt: FIXED_TIME,
+    });
+
+    const first = await service.processPayment(
+      USER_ID,
+      FIRST_KEY,
+      { orderId: ORDER_ID, method: "WALLET" },
+      "SUCCESS",
+    );
+
+    paymentFindUnique.mockResolvedValueOnce(null);
+    const replay = await service.processPayment(
+      USER_ID,
+      FIRST_KEY,
+      { orderId: ORDER_ID, method: "WALLET" },
+      "SUCCESS",
     );
 
     expect(replay).toEqual(first);

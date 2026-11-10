@@ -85,14 +85,14 @@ export class PaymentsService {
             );
           }
 
-          const amount = Number(order.finalAmount);
+          const amount = Number(order.total);
           const payment = await tx.payment.create({
             data: {
               orderId: order.id,
               idempotencyKey: normalizedKey,
               requestFingerprint: fingerprint,
               method: input.method,
-              amount: order.finalAmount,
+              amount: order.total,
             },
           });
 
@@ -134,6 +134,15 @@ export class PaymentsService {
       );
     } catch (error) {
       if (error instanceof HttpException) {
+        if (error.getStatus() === 409) {
+          const concurrentReplay = await this.findPaymentWithOwner(
+            normalizedKey,
+          );
+          if (concurrentReplay) {
+            return this.resolveReplay(concurrentReplay, userId, fingerprint);
+          }
+        }
+
         throw error;
       }
 

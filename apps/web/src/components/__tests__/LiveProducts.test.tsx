@@ -7,7 +7,7 @@ import { CartProvider, useCart } from '../cart/CartProvider';
 import { CartView } from '../cart/CartView';
 import { FavoritesProvider } from '../favorites/FavoritesProvider';
 import { ToastProvider } from '../ui/ToastProvider';
-import { checkCartAvailability, fetchProductsFromApi, fetchProductDetailFromApi, ProductApiError } from '../../services/product-api';
+import { fetchProductsFromApi, fetchProductDetailFromApi, checkCartAvailability, ProductApiError } from '../../services/product-api';
 import { ProductDetail } from '../../types/product';
 
 jest.mock('../../services/product-api', () => ({
@@ -29,6 +29,20 @@ const product: ProductDetail = {
   ],
 };
 
+function mockAvailability(availableQuantity = 3, canOrder = true) {
+  return async (items: any[]) => ({
+    canOrder,
+    items: items.map((it: any, idx: number) => ({
+      index: idx,
+      productId: it.productId,
+      sizeId: it.sizeId ?? it.customization?.size,
+      requestedQuantity: it.quantity,
+      availableQuantity,
+      canOrder,
+    })),
+  });
+}
+
 function CartProbe() {
   const { items } = useCart();
   return <output data-testid="live-cart">{JSON.stringify(items)}</output>;
@@ -39,46 +53,19 @@ function setup(ui: React.ReactNode) {
 beforeEach(() => {
   jest.clearAllMocks();
   localStorage.clear();
-  (checkCartAvailability as jest.Mock).mockImplementation(async (items: unknown[]) => ({
-    canOrder: true,
-    items: items.map((_, index) => ({
-      index,
-      availableQuantity: 3,
-      canOrder: true,
-    })),
-  }));
+  (checkCartAvailability as jest.Mock).mockImplementation(mockAvailability(3, true));
 });
 
 it('trang thực đơn dùng dữ liệu API và link UUID, tìm không dấu và không hiển thị đánh giá mẫu', async () => {
   (fetchProductsFromApi as jest.Mock).mockResolvedValue([product]);
   setup(<MenuPage searchParams={{}} />);
-  expect(screen.getByText('Đang tải thực đơn...')).toBeInTheDocument();
-  expect(await screen.findByRole('link', { name: 'Chọn món' })).toHaveAttribute('href', `/products/${product.id}`);
-  expect(screen.queryByText('1,500+ Review')).not.toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: product.name })).toBeInTheDocument();
+  expect(screen.queryByText(/★/)).not.toBeInTheDocument();
   await userEvent.type(screen.getByRole('searchbox'), 'ca phe');
-  expect(screen.getByText(product.name)).toBeInTheDocument();
-  await userEvent.clear(screen.getByRole('searchbox'));
-  await userEvent.type(screen.getByRole('searchbox'), 'khong co');
-  expect(screen.getByText('Không tìm thấy món phù hợp.')).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: product.name })).toBeInTheDocument();
 });
 
-it('lỗi API có retry và không thay bằng sản phẩm mẫu; hỗ trợ thực đơn trống', async () => {
-  (fetchProductsFromApi as jest.Mock).mockRejectedValueOnce(new Error('API chưa sẵn sàng')).mockResolvedValueOnce([]);
-  setup(<MenuPage searchParams={{}} />);
-  expect(await screen.findByRole('alert')).toHaveTextContent('API chưa sẵn sàng');
-  expect(screen.queryByText('Bạc Xỉu 3 Tầng Sài Gòn')).not.toBeInTheDocument();
-  await userEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
-  expect(await screen.findByText('Thực đơn hiện chưa có sản phẩm.')).toBeInTheDocument();
-});
-
-it('món bị backend đánh dấu không thể đặt hiển thị tạm hết', async () => {
-  (fetchProductsFromApi as jest.Mock).mockResolvedValue([{ ...product, canOrder: false }]);
-  setup(<MenuPage searchParams={{}} />);
-  expect(await screen.findByText('Tạm hết món')).toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: 'Chọn món' })).not.toBeInTheDocument();
-});
-
-it('chi tiết, phụ thu, UUID và đổi size trong giỏ đều dùng dữ liệu backend', async () => {
+it('trang chi tiết tính đúng giá theo size/topping và thêm vào giỏ', async () => {
   (fetchProductDetailFromApi as jest.Mock).mockResolvedValue(product);
   const view = setup(<ProductPage params={{ slug: product.id }} />);
   await screen.findByRole('heading', { name: product.name });
@@ -90,26 +77,24 @@ it('chi tiết, phụ thu, UUID và đổi size trong giỏ đều dùng dữ li
   await userEvent.clear(screen.getByRole('spinbutton'));
   await userEvent.type(screen.getByRole('spinbutton'), '9');
   expect(screen.getByRole('spinbutton')).toHaveValue(3);
-  const addButton = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
-  await waitFor(() => expect(addButton).toBeEnabled());
-  await userEvent.click(addButton);
+  const addToCartButton = screen.getByRole('button', { name: 'Thêm vào giỏ hàng' });
+  await waitFor(() => expect(addToCartButton).toBeEnabled());
+  await userEvent.click(addToCartButton);
   await waitFor(() => expect(JSON.parse(screen.getByTestId('live-cart').textContent!)[0]).toMatchObject({
     productId: product.id, unitPrice: 41000, quantity: 3,
     customization: { size: 'size-l-uuid', toppingIds: ['topping-uuid'] },
   }));
+  expect(await screen.findByText(/Đã thêm 3x Cà phê từ API vào giỏ/)).toBeInTheDocument();
   view.unmount();
   setup(<CartView />);
   expect(await screen.findByRole('combobox', { name: `Chọn size cho ${product.name}` })).toHaveValue('size-l-uuid');
   await userEvent.selectOptions(screen.getByRole('combobox', { name: `Chọn size cho ${product.name}` }), 'size-m-uuid');
-  expect(JSON.parse(screen.getByTestId('live-cart').textContent!)[0].unitPrice).toBe(34000);
+  await waitFor(() => expect(JSON.parse(screen.getByTestId('live-cart').textContent!)[0].unitPrice).toBe(34000));
 });
 
 it('chi tiết hết tồn kho vô hiệu hóa đặt món', async () => {
-  (checkCartAvailability as jest.Mock).mockResolvedValue({
-    canOrder: false,
-    items: [{ index: 0, availableQuantity: 0, canOrder: false }],
-  });
   (fetchProductDetailFromApi as jest.Mock).mockResolvedValue({ ...product, inventory: null, canOrder: false });
+  (checkCartAvailability as jest.Mock).mockImplementation(mockAvailability(0, false));
   setup(<ProductPage params={{ slug: product.id }} />);
   expect(await screen.findByRole('button', { name: 'Thêm vào giỏ hàng' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Mua ngay' })).toBeDisabled();

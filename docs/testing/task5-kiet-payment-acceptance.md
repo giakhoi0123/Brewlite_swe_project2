@@ -1,6 +1,6 @@
 # Task 5 — Nguyễn Tuấn Kiệt payment acceptance record
 
-Ngày kiểm tra local: 2026-11-09.
+Ngày kiểm tra local: 2026-11-10.
 
 ## Phạm vi theo Assignment
 
@@ -28,13 +28,13 @@ npm.cmd run build
 
 Kết quả:
 
-- Prisma: 7/7 migrations apply thành công; seed tạo lại dữ liệu thành công.
-- Unit/service: 12 suites, 53 tests passed.
-- PostgreSQL integration: 4 suites, 17 tests passed.
-- API E2E chạy tuần tự: 6 suites, 33 tests passed.
+- Prisma: 9/9 migrations apply thành công; seed tạo lại dữ liệu thành công.
+- Unit/service: 19 suites, 309 tests passed.
+- PostgreSQL integration: 10 suites, 74 tests passed.
+- API E2E chạy tuần tự: 12 suites, 90 tests passed.
 - ESLint: passed.
 - Nest build: passed.
-- Frontend: 16 suites, 92 tests passed; typecheck và Next.js production build passed.
+- Frontend: 17 suites, 128 tests passed; typecheck và Next.js production build passed.
 
 Test trọng tâm nằm tại:
 
@@ -45,5 +45,6 @@ Test trọng tâm nằm tại:
 ## Ghi chú ranh giới module
 
 Payment không nhận hoặc lưu số thẻ, CVV hay token ví thật. Số tiền luôn đọc từ Order. Inventory
-reservation thuộc Orders module; phiên bản Orders hiện tại không tạo reservation riêng ở bước
-payment, vì vậy failure không thực hiện một phép trừ/hoàn tồn kho thứ hai.
+reservation thuộc Orders module. Việc tích hợp transaction-aware với vòng đời reservation của
+Orders và cộng điểm qua LoyaltyService của Duy được giữ lại cho bước phối hợp riêng; lần resolve
+conflict này không sửa code trong Orders hoặc Loyalty.

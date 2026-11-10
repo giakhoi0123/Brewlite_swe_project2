@@ -2,7 +2,6 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   ProductsRepository,
   ProductWithDetails,
-  ProductWithInventory,
 } from './products.repository';
 import { GetProductsQueryDto } from './dto/get-products-query.dto';
 import { ProductResponseDto } from './dto/product-response.dto';
@@ -25,7 +24,7 @@ export class ProductsService {
     return this.mapToProductDetailResponse(product);
   }
 
-  private mapToProductResponse(product: ProductWithInventory): ProductResponseDto {
+  private mapToProductResponse(product: ProductWithDetails): ProductResponseDto {
     return {
       id: product.id,
       name: product.name,
@@ -38,6 +37,7 @@ export class ProductsService {
   }
 
   private mapToProductDetailResponse(product: ProductWithDetails): ProductDetailResponseDto {
+    const capacity = this.recipeCapacity(product);
     return {
       ...this.mapToProductResponse(product),
       options: product.options.map((opt) => ({
@@ -47,16 +47,28 @@ export class ProductsService {
         extraPrice: Number(opt.extraPrice),
       })),
       inventory: {
-            quantity: this.recipeCapacity(product),
-            reserved: 0,
-            availableStock: this.recipeCapacity(product),
-          },
+        quantity: capacity,
+        reserved: 0,
+        availableStock: capacity,
+      },
     };
   }
 
-  private recipeCapacity(product: ProductWithInventory): number {
-    const sizes = (product.options ?? []).filter(o => o.type === 'SIZE');
-    return Math.max(0, ...sizes.map(size => size.recipes.length ? Math.min(...size.recipes.map(r => r.amount.gt(0) ? Math.max(0, r.ingredient.stock.div(r.amount).floor().toNumber()) : 0)) : 0));
+  private recipeCapacity(product: ProductWithDetails): number {
+    const sizes = (product.options ?? []).filter((o) => o.type === 'SIZE');
+    return Math.max(
+      0,
+      ...sizes.map((size) =>
+        size.recipes.length
+          ? Math.min(
+              ...size.recipes.map((r) =>
+                r.amount.gt(0)
+                  ? Math.max(0, r.ingredient.stock.div(r.amount).floor().toNumber())
+                  : 0,
+              ),
+            )
+          : 0,
+      ),
+    );
   }
-
 }

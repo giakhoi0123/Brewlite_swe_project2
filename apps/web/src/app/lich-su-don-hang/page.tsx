@@ -21,20 +21,27 @@ interface Order {
 }
 
 export default function OrderHistoryPage() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Nếu chưa có thông tin user đăng nhập
-    if (!user?.id) {
+    // Nếu chưa có thông tin user hoặc token đăng nhập
+    if (!user?.id || !token) {
       setLoading(false);
       return;
     }
 
     setLoading(true);
-    fetch(`http://localhost:3005/api/orders/me?userId=${user.id}`)
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3005/api';
+    fetch(`${apiUrl}/orders/me`, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      credentials: 'include',
+    })
       .then((res) => {
         if (!res.ok) throw new Error(`Lỗi (${res.status}): Không thể tải dữ liệu đơn hàng`);
         return res.json();
@@ -48,7 +55,7 @@ export default function OrderHistoryPage() {
         setError(err.message);
         setLoading(false);
       });
-  }, [user]);
+  }, [user, token]);
 
   if (!user) {
     return (

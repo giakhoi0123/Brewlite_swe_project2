@@ -1,19 +1,28 @@
 import { randomUUID } from 'crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { IngredientUnit, OptionType } from '@prisma/client';
+import { OptionType, IngredientUnit, Prisma } from '@prisma/client';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ProductResponseDto } from '../src/products/dto/product-response.dto';
 import { ProductDetailResponseDto } from '../src/products/dto/product-detail-response.dto';
 
-describe('Products recipe availability PostgreSQL integration', () => {
+interface FixtureConfig {
+  isAvailable: boolean;
+  ingredientStock: number;
+  hasRecipe?: boolean;
+}
+
+describe('Products availability PostgreSQL integration', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let fixtureId: string;
   let fixtureName: string;
   let fixtureIngredientId: string;
+  let regularSizeId: string;
+  let largeSizeId: string;
+  let toppingId: string;
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -28,33 +37,50 @@ describe('Products recipe availability PostgreSQL integration', () => {
     fixtureId = randomUUID();
     fixtureName = `Task51 Availability ${fixtureId}`;
     fixtureIngredientId = randomUUID();
+    regularSizeId = randomUUID();
+    largeSizeId = randomUUID();
+    toppingId = randomUUID();
   });
 
   afterEach(async () => {
-    if (!prisma) return;
-    await prisma.product.deleteMany({ where: { id: fixtureId } });
-    await prisma.ingredient.deleteMany({ where: { id: fixtureIngredientId } });
+    // Clean up only this test's fixtures in correct cascade order
+    if (prisma) {
+      if (regularSizeId || largeSizeId) {
+        await prisma.optionRecipe.deleteMany({
+          where: { productOptionId: { in: [regularSizeId, largeSizeId, toppingId] } },
+        });
+      }
+      if (fixtureId) {
+        await prisma.productOption.deleteMany({ where: { productId: fixtureId } });
+        await prisma.product.deleteMany({ where: { id: fixtureId } });
+      }
+      if (fixtureIngredientId) {
+        await prisma.ingredient.deleteMany({ where: { id: fixtureIngredientId } });
+      }
+    }
   });
 
   afterAll(async () => {
     await app?.close();
   });
 
-  async function createFixture(isAvailable: boolean, ingredientStock: number | null) {
-    const regularId = randomUUID();
-    const largeId = randomUUID();
+  async function createFixture({
+    isAvailable,
+    ingredientStock,
+    hasRecipe = true,
+  }: FixtureConfig) {
+    // 1. Create dedicated test Ingredient
+    await prisma.ingredient.create({
+      data: {
+        id: fixtureIngredientId,
+        name: `Task51 Coffee Bean ${fixtureIngredientId}`,
+        unit: IngredientUnit.G,
+        stock: new Prisma.Decimal(ingredientStock.toString()),
+        version: 1,
+      },
+    });
 
-    if (ingredientStock !== null) {
-      await prisma.ingredient.create({
-        data: {
-          id: fixtureIngredientId,
-          name: `Task51 ingredient ${fixtureIngredientId}`,
-          unit: IngredientUnit.ML,
-          stock: ingredientStock,
-        },
-      });
-    }
-
+    // 2. Create Product without legacy inventory and with options
     await prisma.product.create({
       data: {
         id: fixtureId,
@@ -64,19 +90,28 @@ describe('Products recipe availability PostgreSQL integration', () => {
         isAvailable,
         options: {
           create: [
-            { id: randomUUID(), type: OptionType.TOPPING, name: 'Coffee jelly', extraPrice: 5000 },
-            { id: largeId, type: OptionType.SIZE, name: 'Large', extraPrice: 6000 },
-            { id: regularId, type: OptionType.SIZE, name: 'Regular', extraPrice: 0 },
+            { id: toppingId, type: OptionType.TOPPING, name: 'Coffee jelly', extraPrice: 5000 },
+            { id: largeSizeId, type: OptionType.SIZE, name: 'Large', extraPrice: 6000 },
+            { id: regularSizeId, type: OptionType.SIZE, name: 'Regular', extraPrice: 0 },
           ],
         },
       },
     });
 
-    if (ingredientStock !== null) {
+    // 3. Create OptionRecipes (Regular = 20g, Large = 30g)
+    if (hasRecipe) {
       await prisma.optionRecipe.createMany({
         data: [
-          { productOptionId: regularId, ingredientId: fixtureIngredientId, amount: 2 },
-          { productOptionId: largeId, ingredientId: fixtureIngredientId, amount: 4 },
+          {
+            productOptionId: regularSizeId,
+            ingredientId: fixtureIngredientId,
+            amount: new Prisma.Decimal('20.000'),
+          },
+          {
+            productOptionId: largeSizeId,
+            ingredientId: fixtureIngredientId,
+            amount: new Prisma.Decimal('30.000'),
+          },
         ],
       });
     }
@@ -85,56 +120,103 @@ describe('Products recipe availability PostgreSQL integration', () => {
   async function readAllEndpoints(isAvailable: boolean, canOrder: boolean) {
     const list = await request(app.getHttpServer()).get('/api/products').expect(200);
     const search = await request(app.getHttpServer())
-      .get('/api/products').query({ search: fixtureName.toUpperCase() }).expect(200);
+      .get('/api/products')
+      .query({ search: fixtureName.toUpperCase() })
+      .expect(200);
     const detail = await request(app.getHttpServer())
-      .get(`/api/products/${fixtureId}`).expect(200);
-    const listed = (list.body as ProductResponseDto[]).find(p => p.id === fixtureId);
+      .get(`/api/products/${fixtureId}`)
+      .expect(200);
+    const listed = (list.body as ProductResponseDto[]).find((p) => p.id === fixtureId);
 
     expect(listed).toBeDefined();
     expect(search.body).toEqual([listed]);
     for (const product of [listed, search.body[0], detail.body]) {
       expect(product).toMatchObject({ id: fixtureId, isAvailable, canOrder });
     }
+    // The list response keeps the catalog shape and does not expose inventory.
     expect(listed).not.toHaveProperty('inventory');
     expect(listed).not.toHaveProperty('options');
     return detail.body as ProductDetailResponseDto;
   }
 
   it.each([
-    { label: 'available ingredients', isAvailable: true, stock: 8, canOrder: true, capacity: 4 },
-    { label: 'zero ingredients', isAvailable: true, stock: 0, canOrder: false, capacity: 0 },
-    { label: 'sale disabled', isAvailable: false, stock: 8, canOrder: false, capacity: 4 },
-    { label: 'missing recipes', isAvailable: true, stock: null, canOrder: false, capacity: 0 },
-  ])('returns consistent state for $label', async ({ isAvailable, stock, canOrder, capacity }) => {
-    await createFixture(isAvailable, stock);
-    const detail = await readAllEndpoints(isAvailable, canOrder);
+    {
+      label: 'available stock (recipe capacity determines availability without any database inventory record)',
+      isAvailable: true,
+      ingredientStock: 100, // Regular needs 20g -> capacity = 5; Large needs 30g -> 3; Max = 5
+      hasRecipe: true,
+      canOrder: true,
+      expectedStock: 5,
+    },
+    {
+      label: 'zero stock (0g ingredient gives 0 capacity)',
+      isAvailable: true,
+      ingredientStock: 0,
+      hasRecipe: true,
+      canOrder: false,
+      expectedStock: 0,
+    },
+    {
+      label: 'sale disabled (isAvailable = false blocks order even when ingredients are in stock)',
+      isAvailable: false,
+      ingredientStock: 100,
+      hasRecipe: true,
+      canOrder: false,
+      expectedStock: 5,
+    },
+    {
+      label: 'missing recipe (options without recipe give capacity 0 and cannot order)',
+      isAvailable: true,
+      ingredientStock: 100,
+      hasRecipe: false,
+      canOrder: false,
+      expectedStock: 0,
+    },
+  ])(
+    'returns consistent recipe-based state for $label',
+    async ({
+      isAvailable,
+      ingredientStock,
+      hasRecipe,
+      canOrder,
+      expectedStock,
+    }) => {
+      await createFixture({ isAvailable, ingredientStock, hasRecipe });
+      const detail = await readAllEndpoints(isAvailable, canOrder);
 
-    expect(detail.inventory).toEqual({
-      quantity: capacity,
-      reserved: 0,
-      availableStock: capacity,
-    });
-    expect(detail.basePrice).toBe(25000);
-    expect(detail.imageUrl).toBe('https://example.com/task51-coffee.jpg');
-    expect(detail.options.map(({ type, name, extraPrice }) => ({ type, name, extraPrice })))
-      .toEqual([
+      expect(detail.inventory).toEqual({
+        quantity: expectedStock,
+        reserved: 0,
+        availableStock: expectedStock,
+      });
+      expect(detail.basePrice).toBe(25000);
+      expect(detail.imageUrl).toBe('https://example.com/task51-coffee.jpg');
+      expect(detail.options.map(({ type, name, extraPrice }) => ({ type, name, extraPrice }))).toEqual([
         { type: 'SIZE', name: 'Regular', extraPrice: 0 },
         { type: 'SIZE', name: 'Large', extraPrice: 6000 },
         { type: 'TOPPING', name: 'Coffee jelly', extraPrice: 5000 },
       ]);
-  });
+    },
+  );
 
-  it('reflects an ingredient restock on the next list, search and detail read', async () => {
-    await createFixture(true, 0);
+  it('reflects ingredient stock replenishment on the next list, search and detail read', async () => {
+    // 1. Initial state: stock = 0 -> canOrder = false, availableStock = 0
+    await createFixture({
+      isAvailable: true,
+      ingredientStock: 0,
+      hasRecipe: true,
+    });
     const before = await readAllEndpoints(true, false);
     expect(before.inventory?.availableStock).toBe(0);
 
+    // 2. Replenish ingredient stock (100g / 20g = 5 cups)
     await prisma.ingredient.update({
       where: { id: fixtureIngredientId },
-      data: { stock: 2 },
+      data: { stock: new Prisma.Decimal('100.000') },
     });
 
+    // 3. Immediately reflects new capacity on next read without restarting
     const after = await readAllEndpoints(true, true);
-    expect(after.inventory).toEqual({ quantity: 1, reserved: 0, availableStock: 1 });
+    expect(after.inventory).toEqual({ quantity: 5, reserved: 0, availableStock: 5 });
   });
 });

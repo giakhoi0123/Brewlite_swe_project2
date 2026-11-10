@@ -209,7 +209,6 @@ export const SEED_PRODUCTS = [
     basePrice: 25000,
     imageUrl: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=600&auto=format&fit=crop&q=80',
     isAvailable: true,
-    inventory: { quantity: 150, reserved: 0 },
     options: [
       { id: 'b0000000-0000-0000-0000-000000000001', type: OptionType.SIZE, name: 'Size M (Tiêu chuẩn)', extraPrice: 0 },
       { id: 'b0000000-0000-0000-0000-000000000002', type: OptionType.SIZE, name: 'Size L (Lớn)', extraPrice: 6000 },
@@ -222,7 +221,6 @@ export const SEED_PRODUCTS = [
     basePrice: 29000,
     imageUrl: 'https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=600&auto=format&fit=crop&q=80',
     isAvailable: true,
-    inventory: { quantity: 200, reserved: 0 },
     options: [
       { id: 'b0000000-0000-0000-0000-000000000004', type: OptionType.SIZE, name: 'Size M (Tiêu chuẩn)', extraPrice: 0 },
       { id: 'b0000000-0000-0000-0000-000000000005', type: OptionType.SIZE, name: 'Size L (Lớn)', extraPrice: 6000 },
@@ -235,7 +233,6 @@ export const SEED_PRODUCTS = [
     basePrice: 32000,
     imageUrl: 'https://images.unsplash.com/photo-1572442388796-11668a67e53d?w=600&auto=format&fit=crop&q=80',
     isAvailable: true,
-    inventory: { quantity: 120, reserved: 0 },
     options: [
       { id: 'b0000000-0000-0000-0000-000000000007', type: OptionType.SIZE, name: 'Size M (Tiêu chuẩn)', extraPrice: 0 },
       { id: 'b0000000-0000-0000-0000-000000000008', type: OptionType.SIZE, name: 'Size L (Lớn)', extraPrice: 6000 },
@@ -248,7 +245,6 @@ export const SEED_PRODUCTS = [
     basePrice: 45000,
     imageUrl: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=600&auto=format&fit=crop&q=80',
     isAvailable: true,
-    inventory: { quantity: 80, reserved: 0 },
     options: [
       { id: 'b0000000-0000-0000-0000-000000000010', type: OptionType.SIZE, name: 'Size M (Tiêu chuẩn)', extraPrice: 0 },
       { id: 'b0000000-0000-0000-0000-000000000011', type: OptionType.SIZE, name: 'Size L (Lớn)', extraPrice: 10000 },
@@ -262,7 +258,6 @@ export const SEED_PRODUCTS = [
     basePrice: 42000,
     imageUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=600&auto=format&fit=crop&q=80',
     isAvailable: true,
-    inventory: { quantity: 90, reserved: 0 },
     options: [
       { id: 'b0000000-0000-0000-0000-000000000014', type: OptionType.SIZE, name: 'Size M (Tiêu chuẩn)', extraPrice: 0 },
       { id: 'b0000000-0000-0000-0000-000000000015', type: OptionType.SIZE, name: 'Size L (Lớn)', extraPrice: 8000 },
@@ -275,7 +270,6 @@ export const SEED_PRODUCTS = [
     basePrice: 48000,
     imageUrl: 'https://images.unsplash.com/photo-1536256263959-770b48d82b0a?w=600&auto=format&fit=crop&q=80',
     isAvailable: true,
-    inventory: { quantity: 60, reserved: 0 },
     options: [
       { id: 'b0000000-0000-0000-0000-000000000017', type: OptionType.SIZE, name: 'Size M (Tiêu chuẩn)', extraPrice: 0 },
       { id: 'b0000000-0000-0000-0000-000000000018', type: OptionType.SIZE, name: 'Size L (Lớn)', extraPrice: 10000 },
@@ -288,7 +282,6 @@ export const SEED_PRODUCTS = [
     basePrice: 45000,
     imageUrl: 'https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=600&auto=format&fit=crop&q=80',
     isAvailable: false,
-    inventory: { quantity: 0, reserved: 0 },
     options: [
       { id: 'b0000000-0000-0000-0000-000000000020', type: OptionType.SIZE, name: 'Size M (Tiêu chuẩn)', extraPrice: 0 },
     ],
@@ -299,7 +292,6 @@ export const SEED_PRODUCTS = [
     basePrice: 52000,
     imageUrl: 'https://images.unsplash.com/photo-1541167760496-1628856ab772?w=600&auto=format&fit=crop&q=80',
     isAvailable: true,
-    inventory: { quantity: 75, reserved: 0 },
     options: [
       { id: 'b0000000-0000-0000-0000-000000000021', type: OptionType.SIZE, name: 'Size M (Tiêu chuẩn)', extraPrice: 0 },
       { id: 'b0000000-0000-0000-0000-000000000022', type: OptionType.SIZE, name: 'Size L (Lớn)', extraPrice: 10000 },
@@ -313,9 +305,9 @@ export async function main() {
 
   await prisma.$transaction(
     async (tx) => {
-      // 1. Upsert Products, Inventories, and ProductOptions
+      // 1. Upsert Products and ProductOptions
       for (const item of SEED_PRODUCTS) {
-        const { inventory, options, ...productData } = item;
+        const { options, ...productData } = item;
 
         await tx.product.upsert({
           where: { id: productData.id },
@@ -331,19 +323,6 @@ export async function main() {
             basePrice: productData.basePrice,
             imageUrl: productData.imageUrl,
             isAvailable: productData.isAvailable,
-          },
-        });
-
-        await tx.inventory.upsert({
-          where: { productId: productData.id },
-          update: {
-            quantity: inventory.quantity,
-            reserved: inventory.reserved,
-          },
-          create: {
-            productId: productData.id,
-            quantity: inventory.quantity,
-            reserved: inventory.reserved,
           },
         });
 

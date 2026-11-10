@@ -6,17 +6,26 @@ import { ToastProvider } from '../../ui/ToastProvider';
 import { ProductDetailView } from '../ProductDetailView';
 import { getProductBySlug, MOCK_PRODUCTS } from '../../../data/menu-products';
 import { CartProbe } from '../../../test-utils/CartProbe';
-import { checkCartAvailability } from '../../../services/product-api';
+
+jest.mock('../../../services/product-api', () => ({
+  ...jest.requireActual('../../../services/product-api'),
+  checkCartAvailability: jest.fn().mockImplementation(async (items: any[]) => ({
+    canOrder: true,
+    items: items.map((it: any, idx: number) => ({
+      index: idx,
+      productId: it.productId,
+      sizeId: it.sizeId ?? it.customization?.size ?? 'size-default',
+      requestedQuantity: it.quantity,
+      availableQuantity: 99,
+      canOrder: true,
+    })),
+  })),
+}));
 
 const push = jest.fn();
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push }),
 }));
-jest.mock('../../../services/product-api', () => ({
-  checkCartAvailability: jest.fn(),
-}));
-
-const checkAvailability = checkCartAvailability as jest.Mock;
 
 function renderDetail(slug = 'ca-phe-sua-da-sai-gon') {
   const product = getProductBySlug(slug)!;
@@ -37,15 +46,6 @@ describe('ProductDetailView', () => {
   beforeEach(() => {
     window.localStorage.clear();
     push.mockClear();
-    checkAvailability.mockReset();
-    checkAvailability.mockImplementation(async (items: unknown[]) => ({
-      canOrder: true,
-      items: items.map((_, index) => ({
-        index,
-        availableQuantity: 99,
-        canOrder: true,
-      })),
-    }));
   });
 
   it('hiển thị tên, giá khuyến mãi và breadcrumb danh mục', () => {

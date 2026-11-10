@@ -2,20 +2,31 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DEFAULT_CUSTOMIZATION } from '../../../data/menu-options';
 import { addCartItem } from '../../../lib/cart';
-import { checkCartAvailability } from '../../../services/product-api';
 import { ToastProvider } from '../../ui/ToastProvider';
 import { CartProvider } from '../CartProvider';
 import { CartView } from '../CartView';
 
-const push = jest.fn();
-const mockFetch = jest.fn();
-const checkAvailability = checkCartAvailability as jest.Mock;
-
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push }),
+  useRouter: () => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+    back: jest.fn(),
+  }),
 }));
+
 jest.mock('../../../services/product-api', () => ({
-  checkCartAvailability: jest.fn(),
+  ...jest.requireActual('../../../services/product-api'),
+  checkCartAvailability: jest.fn().mockImplementation(async (items: any[]) => ({
+    canOrder: true,
+    items: items.map((it: any, idx: number) => ({
+      index: idx,
+      productId: it.productId,
+      sizeId: it.sizeId ?? it.customization?.size ?? 'size-default',
+      requestedQuantity: it.quantity,
+      availableQuantity: 99,
+      canOrder: true,
+    })),
+  })),
 }));
 
 function seedCart() {
@@ -51,30 +62,27 @@ function renderCart() {
 describe('CartView', () => {
   beforeEach(() => {
     window.localStorage.clear();
-    push.mockClear();
-    checkAvailability.mockReset();
-    checkAvailability.mockImplementation(async (items: unknown[]) => ({
-      canOrder: true,
-      items: items.map((_, index) => ({
-        index,
-        availableQuantity: 99,
-        canOrder: true,
-      })),
-    }));
-    mockFetch.mockReset();
-    mockFetch.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      const code = JSON.parse(String(init?.body)).code;
-      const valid = code === 'COFFEE10';
-      return {
-        ok: valid,
-        status: valid ? 200 : 400,
-        json: async () =>
-          valid
-            ? { code: 'COFFEE10', discountAmount: 10000 }
-            : { message: 'Mã giảm giá không hợp lệ hoặc đã hết hạn.' },
-      } as Response;
-    });
-    global.fetch = mockFetch as unknown as typeof fetch;
+    global.fetch = jest.fn().mockImplementation(async (url: string, init?: any) => {
+      if (typeof url === 'string' && url.includes('/api/promotions/validate')) {
+        const body = JSON.parse(init?.body || '{}');
+        if (body.code === 'COFFEE10') {
+          return {
+            ok: true,
+            json: async () => ({
+              code: 'COFFEE10',
+              discountAmount: 10000,
+            }),
+          };
+        }
+        return {
+          ok: false,
+          json: async () => ({
+            message: 'Mã giảm giá không hợp lệ hoặc đã hết hạn.',
+          }),
+        };
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
   });
 
   it('hiển thị trạng thái trống khi chưa có món', async () => {
@@ -138,12 +146,12 @@ describe('CartView', () => {
     const input = await screen.findByLabelText('Mã ưu đãi / Voucher');
     await userEvent.type(input, 'SAIMA');
     await userEvent.click(screen.getByRole('button', { name: 'Áp dụng' }));
-    expect(screen.getByText('Mã giảm giá không hợp lệ hoặc đã hết hạn.')).toBeInTheDocument();
+    expect(await screen.findByText('Mã giảm giá không hợp lệ hoặc đã hết hạn.')).toBeInTheDocument();
 
     await userEvent.clear(input);
     await userEvent.type(input, 'coffee10');
     await userEvent.click(screen.getByRole('button', { name: 'Áp dụng' }));
-    expect(screen.getByTestId('summary-discount')).toHaveTextContent('10.000');
+    expect(await screen.findByTestId('summary-discount')).toHaveTextContent('10.000');
     // 99.000 - 10.000 + 15.000
     expect(screen.getByTestId('summary-total')).toHaveTextContent('104.000');
   });

@@ -69,9 +69,10 @@ describe("Payments PostgreSQL integration", () => {
   async function createOrder() {
     return prisma.order.create({
       data: {
+        orderNumber: `PAY-${randomUUID()}`,
         userId,
-        totalAmount: 58000,
-        finalAmount: 58000,
+        subtotal: 58000,
+        total: 58000,
         status: OrderStatus.PENDING,
       },
     });
