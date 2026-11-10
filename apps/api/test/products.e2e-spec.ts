@@ -2,9 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('Products API (e2e)', () => {
   let app: INestApplication;
+  let prisma: PrismaService;
 
   const seedProductIds = [
     'a0000000-0000-0000-0000-000000000001',
@@ -30,6 +32,7 @@ describe('Products API (e2e)', () => {
         transform: true,
       }),
     );
+    prisma = app.get(PrismaService);
     await app.init();
   });
 
@@ -101,12 +104,19 @@ describe('Products API (e2e)', () => {
     const validSeedId = 'a0000000-0000-0000-0000-000000000001';
     const nonExistentUuid = 'a0000000-0000-0000-0000-999999999999';
 
-    it('should return 200 and product detail with options and inventory for valid seed ID', async () => {
-      // Seed 'Cà phê đen đá' (a0000000-0000-0000-0000-000000000001):
-      // Robusta stock = 40,000g, Size M recipe = 20g -> capacity = 40,000 / 20 = 2000 cups
-      const expectedRobustaStock = 40000;
-      const sizeMRecipeAmount = 20;
-      const expectedRecipeCapacity = Math.floor(expectedRobustaStock / sizeMRecipeAmount);
+    it('should return 200 and product detail with options and recipe-based inventory compatibility for valid seed ID', async () => {
+      const robusta = await prisma.ingredient.findUnique({
+        where: { id: 'd0000000-0000-4000-8000-000000000001' },
+      });
+      const recipe = await prisma.optionRecipe.findUnique({
+        where: {
+          productOptionId_ingredientId: {
+            productOptionId: 'b0000000-0000-0000-0000-000000000001',
+            ingredientId: 'd0000000-0000-4000-8000-000000000001',
+          },
+        },
+      });
+      const expectedRecipeCapacity = Math.floor(Number(robusta!.stock) / Number(recipe!.amount));
 
       const response = await request(app.getHttpServer())
         .get(`/api/products/${validSeedId}`)

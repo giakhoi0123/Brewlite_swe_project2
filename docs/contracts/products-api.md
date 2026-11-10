@@ -26,9 +26,10 @@ Out-of-stock, fully reserved, disabled and missing-inventory products still retu
 | `canOrder` | boolean | New field: the sale flag is enabled AND at least one unit of available stock exists at read time. |
 | `createdAt` | string | ISO-8601 timestamp. |
 
-`availableStock = max(0, quantity - reserved)` when Inventory exists.
+`availableStock = recipeCapacity` (tính toán từ `Ingredient.stock` và `OptionRecipe.amount` của các size).
 `canOrder = isAvailable && availableStock > 0`.
-Missing Inventory is treated conservatively as no orderable stock: `canOrder: false`.
+Khi sản phẩm không có công thức (recipe) hoặc thiếu nguyên liệu: `availableStock = 0`, `canOrder: false`.
+Trường `inventory` trong `ProductDetailResponse` là compatibility projection để giữ tương thích frontend: `{ quantity: availableStock, reserved: 0, availableStock }`, không đọc từ bảng `inventories` legacy.
 The same rules apply to list, search and detail. There is no second alias for `canOrder`.
 
 | isAvailable | quantity | reserved | availableStock | canOrder |

@@ -41,7 +41,15 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
   it('maps the persisted seed list to the frontend Product contract', async () => {
     const persistedProducts = await prisma.product.findMany({
       orderBy: { name: 'asc' },
-      include: { inventory: true },
+      include: {
+        options: {
+          include: {
+            recipes: {
+              include: { ingredient: true },
+            },
+          },
+        },
+      },
     });
 
     const listRes = await request(app.getHttpServer())
@@ -53,10 +61,30 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
     expect(listRes.body.map((product: { id: string }) => product.id))
       .toEqual(persistedProducts.map(product => product.id));
 
+    const calculateCapacity = (product: typeof persistedProducts[0]) => {
+      const sizes = product.options.filter((o) => o.type === 'SIZE');
+      return Math.max(
+        0,
+        ...sizes.map((size) =>
+          size.recipes.length
+            ? Math.min(
+                ...size.recipes.map((r) =>
+                  Number(r.amount) > 0
+                    ? Math.floor(Number(r.ingredient.stock) / Number(r.amount))
+                    : 0,
+                ),
+              )
+            : 0,
+        ),
+      );
+    };
+
     for (const persistedProduct of persistedProducts) {
       const apiProduct = listRes.body.find(
         (product: { id: string }) => product.id === persistedProduct.id,
       );
+
+      const capacity = calculateCapacity(persistedProduct);
 
       expect(apiProduct).toEqual({
         id: persistedProduct.id,
@@ -64,27 +92,45 @@ describe('Sprint 1 Menu PostgreSQL Contract Integration', () => {
         basePrice: Number(persistedProduct.basePrice),
         imageUrl: persistedProduct.imageUrl,
         isAvailable: persistedProduct.isAvailable,
-        canOrder: persistedProduct.isAvailable &&
-          !!persistedProduct.inventory &&
-          persistedProduct.inventory.quantity > persistedProduct.inventory.reserved,
+        canOrder: persistedProduct.isAvailable && capacity > 0,
         createdAt: persistedProduct.createdAt.toISOString(),
       });
     }
   });
 
-  it('maps PostgreSQL options and inventory to the frontend detail contract', async () => {
+  it('maps PostgreSQL options and recipe-based inventory compatibility to the frontend detail contract', async () => {
     const productId = 'a0000000-0000-0000-0000-000000000008';
     const persistedProduct = await prisma.product.findUnique({
       where: { id: productId },
-      include: { options: true, inventory: true },
+      include: {
+        options: {
+          include: {
+            recipes: {
+              include: { ingredient: true },
+            },
+          },
+        },
+      },
     });
 
     expect(persistedProduct).not.toBeNull();
 
-    // Bottleneck for Cà phê Trứng Nướng is Sữa đặc: stock 40,000g, Size M recipe 60g -> capacity = 666
-    const expectedMilkStock = 40000;
-    const sizeMMilkAmount = 60;
-    const expectedRecipeCapacity = Math.floor(expectedMilkStock / sizeMMilkAmount);
+    // Capacity calculated from sizes & bottleneck ingredient
+    const sizes = persistedProduct!.options.filter((o) => o.type === 'SIZE');
+    const expectedRecipeCapacity = Math.max(
+      0,
+      ...sizes.map((size) =>
+        size.recipes.length
+          ? Math.min(
+              ...size.recipes.map((r) =>
+                Number(r.amount) > 0
+                  ? Math.floor(Number(r.ingredient.stock) / Number(r.amount))
+                  : 0,
+              ),
+            )
+          : 0,
+      ),
+    );
 
     const detailRes = await request(app.getHttpServer())
       .get(`/api/products/${productId}`)
