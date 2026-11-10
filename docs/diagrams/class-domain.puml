@@ -32,15 +32,23 @@ class ProductOption {
   +Decimal extraPrice
 }
 
-class Inventory {
+class OptionRecipe {
+  +UUID productOptionId
+  +UUID ingredientId
+  +Decimal amount
+}
+
+class Ingredient {
   +UUID id
-  +Int quantity
-  +Int reserved
-  +DateTime updatedAt
+  +String name
+  +IngredientUnit unit
+  +Decimal stock
+  +Int version
 }
 
 class Order {
   +UUID id
+  +String orderNumber
   +OrderStatus status
   +Decimal subtotal
   +Decimal discount
@@ -56,7 +64,20 @@ class OrderItem {
   +String optionsSnapshot
 }
 
-class Payment {
+class OrderInventoryReservation {
+  +UUID id
+  +ReservationStatus status
+  +Int version
+  +DateTime createdAt
+}
+
+class OrderReservationLine {
+  +UUID id
+  +Decimal amount
+}
+
+class Payment <<application>> {
+  .. Mock Gateway Adapter (No DB Table) ..
   +UUID id
   +PaymentMethod method
   +PaymentStatus status
@@ -93,6 +114,11 @@ enum OrderStatus {
   COMPLETED
   CANCELLED
 }
+enum ReservationStatus {
+  ACTIVE
+  CONSUMED
+  RELEASED
+}
 enum PaymentStatus {
   PROCESSING
   PAID
@@ -107,6 +133,11 @@ enum OptionType {
   SIZE
   TOPPING
 }
+enum IngredientUnit {
+  G
+  ML
+  PIECE
+}
 enum DiscountType {
   PERCENT
   FIXED
@@ -119,18 +150,24 @@ enum LoyaltyType {
 
 User "1" -- "0..*" Order : places
 Order "1" *-- "1..*" OrderItem
-Order "1" -- "0..*" Payment
+Order "1" -- "0..*" Payment : processed by
 Product "1" -- "0..*" OrderItem : snapshot from
 Product "1" *-- "0..*" ProductOption
-Product "1" -- "1" Inventory
+ProductOption "1" *-- "0..*" OptionRecipe
+OptionRecipe "0..*" -- "1" Ingredient : consumes
+Order "1" -- "0..1" OrderInventoryReservation : reserves
+OrderInventoryReservation "1" *-- "1..*" OrderReservationLine
+OrderReservationLine "0..*" -- "1" Ingredient : holds stock
 Order "0..*" -- "0..1" Promotion : applies
 User "1" -- "0..*" LoyaltyTransaction
 Order "0..1" -- "0..*" LoyaltyTransaction
 User --> UserRole
 Order --> OrderStatus
+OrderInventoryReservation --> ReservationStatus
 Payment --> PaymentStatus
 Payment --> PaymentMethod
 ProductOption --> OptionType
+Ingredient --> IngredientUnit
 Promotion --> DiscountType
 LoyaltyTransaction --> LoyaltyType
 @enduml

@@ -120,9 +120,6 @@ describe('Barista HTTP API Integration (Task 5.1 - Section VII - Lê Quang Đi�
           where: { id: { in: optIds } },
         });
       }
-      await prisma.inventory.deleteMany({
-        where: { productId: { in: prodIds } },
-      });
       await prisma.product.deleteMany({ where: { id: { in: prodIds } } });
     }
 

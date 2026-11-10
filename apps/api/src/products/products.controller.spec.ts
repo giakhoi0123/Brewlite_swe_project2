@@ -30,8 +30,8 @@ describe('ProductsController', () => {
       },
     ],
     inventory: {
-      quantity: 100,
-      reserved: 10,
+      quantity: 90,
+      reserved: 0,
       availableStock: 90,
     },
   };

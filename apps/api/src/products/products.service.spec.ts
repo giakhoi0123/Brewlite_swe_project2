@@ -16,7 +16,6 @@ describe('ProductsService', () => {
     basePrice: new Prisma.Decimal(25000),
     imageUrl: 'https://example.com/black-coffee.jpg',
     isAvailable: true,
-    inventory: { quantity: 8, reserved: 3 },
     options: [
       {
         id: 'b0000000-0000-0000-0000-000000000001',
@@ -137,7 +136,6 @@ describe('ProductsService', () => {
       isAvailable: true,
       createdAt: new Date(),
       updatedAt: new Date(),
-      inventory: null,
       options: [
         {
           id: 'M',
@@ -158,7 +156,7 @@ describe('ProductsService', () => {
       ],
     };
 
-    it('allows ordering with ingredients even without legacy inventory', async () => {
+    it('allows ordering with ingredients without legacy database inventory', async () => {
       repository.findMany.mockResolvedValue([product]);
       expect((await service.findAll({}))[0].canOrder).toBe(true);
 
@@ -170,11 +168,57 @@ describe('ProductsService', () => {
       });
     });
 
+    it('calculates capacity based on bottleneck ingredient', async () => {
+      const bottleneckProduct = {
+        ...product,
+        options: [
+          {
+            ...product.options[0],
+            recipes: [
+              {
+                productOptionId: 'M',
+                ingredientId: 'milk',
+                amount: new Prisma.Decimal(100),
+                ingredient: { id: 'milk', name: 'Milk', stock: new Prisma.Decimal(1000) }, // 10 servings
+              },
+              {
+                productOptionId: 'M',
+                ingredientId: 'beans',
+                amount: new Prisma.Decimal(30),
+                ingredient: { id: 'beans', name: 'Beans', stock: new Prisma.Decimal(120) }, // 4 servings (bottleneck)
+              },
+            ],
+          },
+        ],
+      };
+
+      repository.findById.mockResolvedValue(bottleneckProduct);
+      const detail = await service.findOne('coffee');
+      expect(detail.canOrder).toBe(true);
+      expect(detail.inventory).toEqual({
+        quantity: 4,
+        reserved: 0,
+        availableStock: 4,
+      });
+    });
+
     it('blocks missing recipes and disabled products', async () => {
       repository.findMany.mockResolvedValue([
         { ...product, options: [{ ...product.options[0], recipes: [] }] },
       ]);
       expect((await service.findAll({}))[0].canOrder).toBe(false);
+
+      repository.findById.mockResolvedValue({
+        ...product,
+        options: [{ ...product.options[0], recipes: [] }],
+      });
+      const noRecipeDetail = await service.findOne('coffee');
+      expect(noRecipeDetail.canOrder).toBe(false);
+      expect(noRecipeDetail.inventory).toEqual({
+        quantity: 0,
+        reserved: 0,
+        availableStock: 0,
+      });
 
       repository.findMany.mockResolvedValue([{ ...product, isAvailable: false }]);
       expect((await service.findAll({}))[0].canOrder).toBe(false);

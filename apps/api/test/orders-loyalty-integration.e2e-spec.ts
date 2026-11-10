@@ -131,9 +131,6 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
           where: { id: { in: optIds } },
         });
       }
-      await prisma.inventory.deleteMany({
-        where: { productId: { in: prodIds } },
-      });
       await prisma.product.deleteMany({ where: { id: { in: prodIds } } });
     }
 
