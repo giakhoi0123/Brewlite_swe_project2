@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { OrderStatus, LoyaltyType, Prisma } from '@prisma/client';
 
 @Injectable()
 export class OrdersService {
@@ -12,10 +12,11 @@ export class OrdersService {
     private readonly loyaltyService: LoyaltyService,
   ) {}
 
-  // Quy tắc Order State Machine
+  // Quy tắc Order State Machine (Đã cập nhật đầy đủ OrderStatus.PAID)
   private readonly validTransitions: Record<OrderStatus, OrderStatus[]> = {
-    [OrderStatus.PENDING]: [OrderStatus.PROCESSING, OrderStatus.CANCELLED],
-    [OrderStatus.PROCESSING]: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+    [OrderStatus.PENDING]: [OrderStatus.PROCESSING, OrderStatus.PAID, OrderStatus.CANCELLED],
+    [OrderStatus.PROCESSING]: [OrderStatus.PAID, OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+    [OrderStatus.PAID]: [OrderStatus.PROCESSING, OrderStatus.COMPLETED, OrderStatus.CANCELLED],
     [OrderStatus.COMPLETED]: [],
     [OrderStatus.CANCELLED]: [],
   };
@@ -112,15 +113,15 @@ export class OrdersService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      // Đơn hàng COMPLETED -> Tích điểm tự động (10.000 VNĐ = 1 điểm) & tăng lượt dùng Promotion
+      // Đơn hàng COMPLETED -> Tích điểm Idempotent (truyền tx) & tăng lượt dùng Promotion
       if (dto.status === OrderStatus.COMPLETED) {
-        const pointsEarned = Math.floor(Number(order.finalAmount) / 10000);
-        if (pointsEarned > 0) {
-          await this.loyaltyService.earnPoints({
-            userId: order.userId,
-            points: pointsEarned,
-          });
-        }
+        // Gọi addPoints truyền tx (Tự bỏ qua nếu Kiệt đã cộng điểm lúc PAID)
+        await this.loyaltyService.addPoints(
+          order.id,
+          order.userId,
+          Number(order.finalAmount),
+          tx,
+        );
 
         if (order.promotionId) {
           await tx.promotion.update({
@@ -130,11 +131,21 @@ export class OrdersService {
         }
       }
 
-      // Đơn hàng CANCELLED -> Hoàn lại điểm đã sử dụng (nếu có)
+      // Đơn hàng CANCELLED -> Hoàn lại điểm đã sử dụng trực tiếp trong tx
       if (dto.status === OrderStatus.CANCELLED && order.pointsRedeemed > 0) {
-        await this.loyaltyService.earnPoints({
-          userId: order.userId,
-          points: order.pointsRedeemed,
+        await tx.user.update({
+          where: { id: order.userId },
+          data: { loyaltyPoints: { increment: order.pointsRedeemed } },
+        });
+
+        await tx.loyaltyLog.create({
+          data: {
+            userId: order.userId,
+            orderId: order.id,
+            points: order.pointsRedeemed,
+            type: LoyaltyType.REVERSE,
+            reason: `Hoàn lại ${order.pointsRedeemed} điểm do đơn hàng #${order.id.slice(0, 8)} bị hủy`,
+          },
         });
       }
 

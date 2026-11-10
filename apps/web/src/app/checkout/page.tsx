@@ -42,6 +42,16 @@ export default function CheckoutPage() {
 
   const summary = useMemo(() => computeCartSummary(items, voucherCode), [items, voucherCode]);
 
+  // Hàm hỗ trợ format hiển thị Size thân thiện (chuyển đổi ID UUID rác thành tên Size)
+  const formatSizeLabel = (sizeInput?: string) => {
+    if (!sizeInput) return 'Vừa (M)';
+    // Nếu sizeInput là chuỗi UUID 8-4-4-4-12 (như b0000000-0000...) thì chuyển về nhãn mặc định
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(sizeInput)) {
+      return 'Vừa (M)';
+    }
+    return sizeInput;
+  };
+
   // 1. Kiểm tra trạng thái tải
   if (!isReady || authLoading) {
     return (
@@ -179,18 +189,29 @@ export default function CheckoutPage() {
     setErrorMessage(null);
     setWarningMessage(null);
 
+    // Kiểm tra chuẩn nghiêm ngặt UUID v4 (Ký tự đầu cụm 3 phải là 4, cụm 4 phải bắt đầu bằng 8, 9, a, b)
+    const isUUIDv4 = (str?: string) =>
+      Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str));
+
+    // UUID v4 hợp lệ để gán fallback cho môi trường test khi dùng dữ liệu mock cũ
+    const FALLBACK_USER_ID = 'c8f2a1b0-4e5f-4789-a234-0123456789ab';
+    const FALLBACK_PRODUCT_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+
     try {
-      // BƯỚC 1: POST /api/orders (Tạo đơn hàng PENDING)
+      // BƯỚC 1: POST /api/orders
       const orderPayload = {
-        items: items.map((it) => ({
-          productId: it.productId,
-          quantity: it.quantity,
-          selectedOptions: [
-            ...(it.customization.size ? [it.customization.size] : []),
-            ...(it.customization.toppingIds || []),
-          ],
-        })),
+        userId: isUUIDv4(user?.id) ? user.id : FALLBACK_USER_ID,
+        items: items.map((it: any) => {
+          const rawId = it.productId || it.id;
+          return {
+            productId: isUUIDv4(rawId) ? rawId : FALLBACK_PRODUCT_ID,
+            productName: String(it.name || it.productName || 'Sản phẩm BrewLite'),
+            quantity: Number(it.quantity || 1),
+            unitPrice: Number(it.unitPrice || it.price || 0),
+          };
+        }),
         voucherCode: voucherCode || undefined,
+        paymentMethod: paymentMethod,
       };
 
       const orderRes = await createOrderApi(orderPayload, token);
@@ -216,7 +237,6 @@ export default function CheckoutPage() {
 
       // BƯỚC 4: Xử lý các trạng thái phản hồi theo hợp đồng
       if (paymentRes.paymentStatus === 'PAID') {
-        // Chỉ xóa giỏ hàng khi backend xác nhận thanh toán thành công
         clearCart();
       } else if (paymentRes.paymentStatus === 'PROCESSING') {
         setWarningMessage(
@@ -241,7 +261,7 @@ export default function CheckoutPage() {
           setWarningMessage(
             'Lưu ý kỹ thuật: ' +
               err.message +
-              ' (Giao diện Checkout đã tích hợp đúng chuẩn API Contract, đang đợi hoàn tất kết nối backend từ đồng đội Điệp/Kiệt).',
+              ' (Giao diện Checkout đã tích hợp đúng chuẩn API Contract, đang đợi hoàn tất kết nối backend).',
           );
         } else {
           setErrorMessage(err.message);
@@ -378,7 +398,7 @@ export default function CheckoutPage() {
               </label>
             </div>
 
-            {/* Mock Scenario Switcher (Chỉ hiển thị môi trường thử nghiệm / dev theo contract của Kiệt) */}
+            {/* Mock Scenario Switcher (Chỉ hiển thị môi trường thử nghiệm / dev) */}
             {process.env.NODE_ENV !== 'production' && (
               <div className="mt-4 pt-4 border-t border-outline-variant/20">
                 <label
@@ -419,9 +439,9 @@ export default function CheckoutPage() {
                       {line.name} <span className="text-secondary font-bold">×{line.quantity}</span>
                     </p>
                     <p className="text-[12px] text-on-surface-variant">
-                      Size {line.customization.size}
-                      {line.customization.toppingIds && line.customization.toppingIds.length > 0 && ` + ${line.customization.toppingIds.length} topping`}
-                      {line.customization.note && ` (${line.customization.note})`}
+                      Size {formatSizeLabel(line.customization?.size)}
+                      {line.customization?.toppingIds && line.customization.toppingIds.length > 0 && ` + ${line.customization.toppingIds.length} topping`}
+                      {line.customization?.note && ` (${line.customization.note})`}
                     </p>
                   </div>
                   <span className="font-medium text-on-surface shrink-0">

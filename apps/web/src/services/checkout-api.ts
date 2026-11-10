@@ -4,15 +4,19 @@ export type PaymentMethod = 'WALLET' | 'CARD';
 export type PaymentStatus = 'PROCESSING' | 'PAID' | 'FAILED' | 'UNKNOWN';
 export type PaymentOrderStatus = 'PENDING' | 'PAID' | 'PAYMENT_FAILED';
 
+// 1. Cập nhật Interface khớp chính xác DTO Backend đòi hỏi
 export interface OrderItemPayload {
   productId: string;
+  productName: string;
   quantity: number;
-  selectedOptions?: string[];
+  unitPrice: number;
 }
 
 export interface CreateOrderPayload {
+  userId: string;
   items: OrderItemPayload[];
-  voucherCode?: string;
+  voucherCode?: string | null;
+  paymentMethod?: PaymentMethod;
   notes?: string;
 }
 
@@ -67,21 +71,40 @@ export async function createOrderApi(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  // 2. Ép kiểu chuẩn trước khi truyền đi (xử lý triệt để unitPrice dạng number & UUID string)
+  const formattedPayload = {
+    userId: String(payload.userId || ''),
+    items: (payload.items || []).map((item) => ({
+      productId: String(item.productId),
+      productName: String(item.productName || ''),
+      quantity: Number(item.quantity || 1),
+      unitPrice: Number(item.unitPrice || 0),
+    })),
+    voucherCode: payload.voucherCode || null,
+    paymentMethod: payload.paymentMethod || 'WALLET',
+    notes: payload.notes || '',
+  };
+
   try {
     const res = await fetch(`${API_BASE_URL}/orders`, {
       method: 'POST',
       headers,
       credentials: 'include',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(formattedPayload),
     });
 
     const isJson = res.headers.get('content-type')?.includes('application/json');
     const data = isJson ? await res.json() : null;
 
     if (!res.ok) {
+      // Xử lý thông báo lỗi dạng mảng (nếu có từ class-validator NestJS)
+      const errorMsg = Array.isArray(data?.message)
+        ? data.message.join(', ')
+        : data?.message;
+
       if (res.status === 409) {
         throw new CheckoutApiError(
-          data?.message || 'Một hoặc nhiều món trong giỏ hàng đã hết hoặc không đủ số lượng.',
+          errorMsg || 'Một hoặc nhiều món trong giỏ hàng đã hết hoặc không đủ số lượng.',
           409,
           'INVENTORY_CONFLICT',
           false,
@@ -99,7 +122,7 @@ export async function createOrderApi(
         );
       }
       throw new CheckoutApiError(
-        data?.message || `Lỗi máy chủ khi tạo đơn (HTTP ${res.status})`,
+        errorMsg || `Lỗi máy chủ khi tạo đơn (HTTP ${res.status})`,
         res.status,
       );
     }
@@ -147,9 +170,10 @@ export async function processPaymentApi(
     const data = isJson ? await res.json() : null;
 
     if (!res.ok) {
+      const errorMsg = Array.isArray(data?.message) ? data.message.join(', ') : data?.message;
       if (res.status === 402) {
         throw new CheckoutApiError(
-          data?.message || 'Giao dịch thanh toán bị từ chối.',
+          errorMsg || 'Giao dịch thanh toán bị từ chối.',
           402,
           'PAYMENT_DECLINED',
           data?.retryable ?? true,
@@ -157,7 +181,7 @@ export async function processPaymentApi(
       }
       if (res.status === 409) {
         throw new CheckoutApiError(
-          data?.message || 'Xung đột khóa giao dịch (Idempotency Key Conflict) hoặc đơn đã thanh toán.',
+          errorMsg || 'Xung đột khóa giao dịch (Idempotency Key Conflict) hoặc đơn đã thanh toán.',
           409,
           'IDEMPOTENCY_CONFLICT',
           false,
@@ -172,7 +196,7 @@ export async function processPaymentApi(
         );
       }
       throw new CheckoutApiError(
-        data?.message || `Thanh toán thất bại (HTTP ${res.status})`,
+        errorMsg || `Thanh toán thất bại (HTTP ${res.status})`,
         res.status,
       );
     }

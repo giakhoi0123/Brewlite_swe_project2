@@ -29,9 +29,16 @@ enum DiscountType {
   FIXED_AMOUNT
 }
 
+enum LoyaltyType {
+  EARN
+  REDEEM
+  REVERSE
+}
+
 enum OrderStatus {
   PENDING
   PROCESSING
+  PAID
   COMPLETED
   CANCELLED
 }
@@ -92,7 +99,7 @@ model ProductOption {
   extraPrice Decimal    @default(0) @map("extra_price") @db.Decimal(10, 2)
   createdAt  DateTime   @default(now()) @map("created_at")
 
-  product Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
   recipes OptionRecipe[]
 
   @@index([productId])
@@ -160,15 +167,21 @@ model Promotion {
 }
 
 model LoyaltyLog {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
+  id        String      @id @default(uuid()) @db.Uuid
+  userId    String      @map("user_id") @db.Uuid
+  orderId   String?     @map("order_id") @db.Uuid
   points    Int
-  reason    String   @db.VarChar(255)
-  createdAt DateTime @default(now()) @map("created_at")
+  amount    Decimal?    @map("amount") @db.Decimal(10, 2)
+  type      LoyaltyType @default(EARN)
+  reason    String      @db.VarChar(255)
+  createdAt DateTime    @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
+  @@unique([orderId, type])
   @@index([userId])
+  @@index([orderId])
   @@map("loyalty_logs")
 }
 
@@ -185,9 +198,10 @@ model Order {
   createdAt      DateTime    @default(now()) @map("created_at")
   updatedAt      DateTime    @updatedAt @map("updated_at")
 
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  promotion Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
-  items     OrderItem[]
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promotion   Promotion?   @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  items       OrderItem[]
+  loyaltyLogs LoyaltyLog[]
 
   @@index([userId])
   @@index([promotionId])
