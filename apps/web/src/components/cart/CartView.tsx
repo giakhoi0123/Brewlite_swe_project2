@@ -17,7 +17,7 @@ const PRODUCTS_BY_ID = new Map(MOCK_PRODUCTS.map((p) => [p.id, p]));
 type PendingDelete = { kind: 'line'; lineId: string; name: string } | { kind: 'all' } | null;
 
 export const CartView: React.FC = () => {
-  const { isReady, isChecking, canCheckout, items, voucherCode, updateQuantity, updateSize, removeItem, clearCart, setVoucherCode } = useCart();
+  const { isReady, isChecking, canCheckout, items, voucherCode, lineLimits, updateQuantity, updateSize, removeItem, clearCart, setVoucherCode } = useCart();
   const { showToast } = useToast();
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
 
@@ -105,6 +105,15 @@ export const CartView: React.FC = () => {
                   quantity <= 0
                     ? setPendingDelete({ kind: 'line', lineId: item.lineId, name: item.name })
                     : updateQuantity(item.lineId, quantity)
+                }
+                maxQuantity={lineLimits[item.lineId]}
+                onQuantityLimit={(max) =>
+                  showToast(
+                    max > 0
+                      ? `${item.name} chỉ còn đủ nguyên liệu cho tối đa ${max} ly. Không thể tăng thêm.`
+                      : `${item.name} hiện đã hết nguyên liệu.`,
+                    'error',
+                  )
                 }
                 onSizeChange={(size) => updateSize(item.lineId, size)}
                 onRemove={() => setPendingDelete({ kind: 'line', lineId: item.lineId, name: item.name })}

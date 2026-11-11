@@ -189,25 +189,26 @@ export default function CheckoutPage() {
     setErrorMessage(null);
     setWarningMessage(null);
 
-    // Kiểm tra chuẩn nghiêm ngặt UUID v4 (Ký tự đầu cụm 3 phải là 4, cụm 4 phải bắt đầu bằng 8, 9, a, b)
-    const isUUIDv4 = (str?: string) =>
-      Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str));
-
-    // UUID v4 hợp lệ để gán fallback cho môi trường test khi dùng dữ liệu mock cũ
-    const FALLBACK_USER_ID = 'c8f2a1b0-4e5f-4789-a234-0123456789ab';
-    const FALLBACK_PRODUCT_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+    // Cùng định dạng với POSTGRES_UUID_REGEX ở backend (chấp nhận cả seed ID a000..., b000...).
+    // Không dùng regex UUID v4 vì seed ID của dự án không phải v4.
+    const isPostgresUuid = (str?: string): str is string =>
+      Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
 
     try {
       // BƯỚC 1: POST /api/orders
       const orderPayload = {
-        userId: isUUIDv4(user?.id) ? user.id : FALLBACK_USER_ID,
-        items: items.map((it: any) => {
-          const rawId = it.productId || it.id;
+        userId: user?.id ?? '',
+        items: items.map((it) => {
+          // Gửi UUID của ProductOption (size + topping). Mã cũ dạng 'M'/'L' bị loại để tránh 400.
+          const optionIds = [it.customization?.size, ...(it.customization?.toppingIds ?? [])].filter(
+            isPostgresUuid,
+          );
           return {
-            productId: isUUIDv4(rawId) ? rawId : FALLBACK_PRODUCT_ID,
-            productName: String(it.name || it.productName || 'Sản phẩm BrewLite'),
+            productId: it.productId,
+            productName: it.name,
             quantity: Number(it.quantity || 1),
-            unitPrice: Number(it.unitPrice || it.price || 0),
+            unitPrice: Number(it.unitPrice || 0),
+            selectedOptions: Array.from(new Set(optionIds)),
           };
         }),
         voucherCode: voucherCode || undefined,
