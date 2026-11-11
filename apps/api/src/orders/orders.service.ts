@@ -235,6 +235,30 @@ export class OrdersService {
   }
 
   /**
+   * Transaction-aware boundary for modules that must update their own records
+   * atomically with the Order lifecycle (for example Payments).
+   *
+   * The caller owns BEGIN/COMMIT/ROLLBACK. Keeping this method on OrdersService
+   * ensures reservation, stock, optimistic version and status history rules are
+   * not duplicated or bypassed by another module.
+   */
+  async transitionOrderStatusInTransaction(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    targetStatus: OrderStatus,
+    actor?: { userId?: string; role?: string },
+    reason?: string,
+  ): Promise<Order> {
+    return await this.executeTransitionOrderStatusTransaction(
+      tx,
+      orderId,
+      targetStatus,
+      actor,
+      reason,
+    );
+  }
+
+  /**
    * Ranh giới tích hợp với Payment Gateway: Thông báo thanh toán thành công (PAID).
    * - Idempotent: Nếu đơn đã PAID, trả về kết quả thành công mà không trừ kho lặp.
    */

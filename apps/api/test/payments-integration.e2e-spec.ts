@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
-import { OrderStatus } from "@prisma/client";
+import { IngredientUnit, OrderStatus, ReservationStatus } from "@prisma/client";
 import * as request from "supertest";
 import { AppModule } from "../src/app.module";
 import { MockPaymentGatewayAdapter } from "../src/payments/adapters/mock-payment-gateway.adapter";
@@ -15,6 +15,11 @@ describe("Payments PostgreSQL integration", () => {
   let prisma: PrismaService;
   let accessToken: string;
   let userId: string;
+  let ingredientId: string;
+
+  const RESERVED_AMOUNT = 10;
+  const STOCK_WHILE_RESERVED = 90;
+  const STOCK_AFTER_RELEASE = 100;
 
   const adapter = new MockPaymentGatewayAdapter(
     () => new Date("2026-11-09T12:00:00.000Z"),
@@ -49,11 +54,24 @@ describe("Payments PostgreSQL integration", () => {
       sub: user.id,
       sessionVersion: user.sessionVersion,
     });
+
+    const ingredient = await prisma.ingredient.create({
+      data: {
+        name: `Payment integration ingredient ${randomUUID()}`,
+        unit: IngredientUnit.G,
+        stock: STOCK_WHILE_RESERVED,
+      },
+    });
+    ingredientId = ingredient.id;
   });
 
   beforeEach(async () => {
     await prisma.payment.deleteMany({ where: { order: { userId } } });
     await prisma.order.deleteMany({ where: { userId } });
+    await prisma.ingredient.update({
+      where: { id: ingredientId },
+      data: { stock: STOCK_WHILE_RESERVED, version: 1 },
+    });
     gatewayProcess.mockClear();
   });
 
@@ -61,13 +79,14 @@ describe("Payments PostgreSQL integration", () => {
     if (prisma && userId) {
       await prisma.payment.deleteMany({ where: { order: { userId } } });
       await prisma.order.deleteMany({ where: { userId } });
+      await prisma.ingredient.deleteMany({ where: { id: ingredientId } });
       await prisma.user.deleteMany({ where: { id: userId } });
     }
     await app?.close();
   });
 
   async function createOrder() {
-    return prisma.order.create({
+    const order = await prisma.order.create({
       data: {
         orderNumber: `PAY-${randomUUID()}`,
         userId,
@@ -76,6 +95,29 @@ describe("Payments PostgreSQL integration", () => {
         status: OrderStatus.PENDING,
       },
     });
+
+    await prisma.orderInventoryReservation.create({
+      data: {
+        orderId: order.id,
+        status: ReservationStatus.ACTIVE,
+        lines: {
+          create: {
+            ingredientId,
+            amount: RESERVED_AMOUNT,
+          },
+        },
+      },
+    });
+    await prisma.orderStatusHistory.create({
+      data: {
+        orderId: order.id,
+        fromStatus: null,
+        toStatus: OrderStatus.PENDING,
+        reason: "Payment integration order created",
+      },
+    });
+
+    return order;
   }
 
   function paymentRequest(
@@ -126,6 +168,32 @@ describe("Payments PostgreSQL integration", () => {
         where: { orderId: order.id, status: "PAID" },
       }),
     ).toBe(1);
+
+    const paidOrder = await prisma.order.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { reservation: true, statusHistory: true },
+    });
+    expect(paidOrder.status).toBe(OrderStatus.PAID);
+    expect(paidOrder.version).toBe(2);
+    expect(paidOrder.reservation?.status).toBe(ReservationStatus.CONSUMED);
+    expect(paidOrder.reservation?.consumedAt).not.toBeNull();
+    expect(paidOrder.statusHistory).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fromStatus: OrderStatus.PENDING,
+          toStatus: OrderStatus.PAID,
+        }),
+      ]),
+    );
+    expect(
+      Number(
+        (
+          await prisma.ingredient.findUniqueOrThrow({
+            where: { id: ingredientId },
+          })
+        ).stock,
+      ),
+    ).toBe(STOCK_WHILE_RESERVED);
   });
 
   it("persists a decline and permits a successful retry with a new key", async () => {
@@ -147,6 +215,22 @@ describe("Payments PostgreSQL integration", () => {
       (await prisma.order.findUnique({ where: { id: order.id } }))?.status,
     ).toBe(OrderStatus.PAYMENT_FAILED);
 
+    const failedReservation =
+      await prisma.orderInventoryReservation.findUniqueOrThrow({
+        where: { orderId: order.id },
+      });
+    expect(failedReservation.status).toBe(ReservationStatus.RELEASED);
+    expect(failedReservation.releasedAt).not.toBeNull();
+    expect(
+      Number(
+        (
+          await prisma.ingredient.findUniqueOrThrow({
+            where: { id: ingredientId },
+          })
+        ).stock,
+      ),
+    ).toBe(STOCK_AFTER_RELEASE);
+
     const paid = await paymentRequest(
       order.id,
       randomUUID(),
@@ -166,5 +250,67 @@ describe("Payments PostgreSQL integration", () => {
       2,
     );
     expect(gatewayProcess).toHaveBeenCalledTimes(2);
+
+    const retriedOrder = await prisma.order.findUniqueOrThrow({
+      where: { id: order.id },
+      include: {
+        reservation: true,
+        statusHistory: { orderBy: { createdAt: "asc" } },
+      },
+    });
+    expect(retriedOrder.version).toBe(4);
+    expect(retriedOrder.reservation?.status).toBe(ReservationStatus.CONSUMED);
+    expect(retriedOrder.statusHistory.map((entry) => entry.toStatus)).toEqual([
+      OrderStatus.PENDING,
+      OrderStatus.PAYMENT_FAILED,
+      OrderStatus.PENDING,
+      OrderStatus.PAID,
+    ]);
+    expect(
+      Number(
+        (
+          await prisma.ingredient.findUniqueOrThrow({
+            where: { id: ingredientId },
+          })
+        ).stock,
+      ),
+    ).toBe(STOCK_WHILE_RESERVED);
+  });
+
+  it("keeps stock reserved for timeout and rejects a different key", async () => {
+    const order = await createOrder();
+    const firstKey = randomUUID();
+
+    const unknown = await paymentRequest(
+      order.id,
+      firstKey,
+      "WALLET",
+      "TIMEOUT",
+    ).expect(202);
+    expect(unknown.body).toMatchObject({
+      paymentStatus: "UNKNOWN",
+      orderStatus: "PENDING",
+      resultCode: "PAYMENT_STATUS_UNKNOWN",
+      retryable: false,
+    });
+
+    const blocked = await paymentRequest(
+      order.id,
+      randomUUID(),
+      "WALLET",
+      "SUCCESS",
+    ).expect(409);
+    expect(blocked.body).toMatchObject({ code: "ORDER_NOT_PAYABLE" });
+    expect(gatewayProcess).toHaveBeenCalledTimes(1);
+
+    const pendingOrder = await prisma.order.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { reservation: true },
+    });
+    expect(pendingOrder.status).toBe(OrderStatus.PENDING);
+    expect(pendingOrder.reservation?.status).toBe(ReservationStatus.ACTIVE);
+    expect(await prisma.payment.count({ where: { orderId: order.id } })).toBe(
+      1,
+    );
   });
 });
