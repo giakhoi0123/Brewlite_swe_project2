@@ -154,7 +154,19 @@ describe('CheckoutPage', () => {
     await userEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(checkoutApi.createOrderApi).toHaveBeenCalled();
+      // Seed ID (không phải UUID v4) phải được giữ nguyên; size cũ dạng 'M' bị loại khỏi selectedOptions.
+      expect(checkoutApi.createOrderApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: [
+            expect.objectContaining({
+              productId: 'a0000000-0000-0000-0000-000000000001',
+              quantity: 2,
+              selectedOptions: [],
+            }),
+          ],
+        }),
+        'jwt-token-123',
+      );
       expect(checkoutApi.processPaymentApi).toHaveBeenCalledWith(
         'ord-10000000-0000-4000-8000-000000000001',
         'WALLET',
