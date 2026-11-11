@@ -40,7 +40,13 @@ describe('CORS Configuration (e2e)', () => {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'Accept',
+        'Idempotency-Key',
+        'X-Mock-Payment-Scenario',
+      ],
     });
 
     await app.init();
@@ -79,5 +85,23 @@ describe('CORS Configuration (e2e)', () => {
       .set('Origin', unauthorizedOrigin);
 
     expect(response.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it('allows payment idempotency and development mock headers in preflight', async () => {
+    const response = await request(app.getHttpServer())
+      .options('/api/payments')
+      .set('Origin', targetWebOrigin)
+      .set('Access-Control-Request-Method', 'POST')
+      .set(
+        'Access-Control-Request-Headers',
+        'content-type,idempotency-key,x-mock-payment-scenario',
+      )
+      .expect((res) => {
+        expect([200, 204]).toContain(res.status);
+      });
+
+    const allowedHeaders = response.headers['access-control-allow-headers'];
+    expect(allowedHeaders).toContain('Idempotency-Key');
+    expect(allowedHeaders).toContain('X-Mock-Payment-Scenario');
   });
 });
