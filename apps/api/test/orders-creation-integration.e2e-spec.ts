@@ -123,9 +123,6 @@ describe('Orders Creation PostgreSQL Integration (Task 5.1 - Lê Quang Điệp)'
           where: { id: { in: optIds } },
         });
       }
-      await prisma.inventory.deleteMany({
-        where: { productId: { in: prodIds } },
-      });
       await prisma.product.deleteMany({ where: { id: { in: prodIds } } });
     }
 
@@ -162,7 +159,6 @@ describe('Orders Creation PostgreSQL Integration (Task 5.1 - Lê Quang Điệp)'
   async function createTestFixture(params: {
     coffeeStock: number;
     milkStock?: number;
-    initialLegacyQuantity?: number;
   }) {
     const userId = randomUUID();
     await prisma.user.create({
@@ -214,14 +210,6 @@ describe('Orders Creation PostgreSQL Integration (Task 5.1 - Lê Quang Điệp)'
         basePrice: new Prisma.Decimal(30000),
         imageUrl: 'https://example.com/test.jpg',
         isAvailable: true,
-        inventory: params.initialLegacyQuantity !== undefined
-          ? {
-              create: {
-                quantity: params.initialLegacyQuantity,
-                reserved: 0,
-              },
-            }
-          : undefined,
         options: {
           create: [
             {
@@ -279,10 +267,9 @@ describe('Orders Creation PostgreSQL Integration (Task 5.1 - Lê Quang Điệp)'
   // ============================================================================
   // KỊCH BẢN A: TẠO ORDER THÀNH CÔNG
   // ============================================================================
-  it('Kịch bản A: Tạo order thành công, trừ tồn kho, tạo reservation và giữ nguyên legacy inventory', async () => {
+  it('Kịch bản A: Tạo order thành công, trừ tồn kho nguyên liệu và tạo reservation', async () => {
     const fixture = await createTestFixture({
       coffeeStock: 100, // Cần: (20 + 10) * 2 = 60
-      initialLegacyQuantity: 99,
     });
 
     const result = await ordersService.createOrder(fixture.userId, {
@@ -361,12 +348,11 @@ describe('Orders Creation PostgreSQL Integration (Task 5.1 - Lê Quang Điệp)'
     expect(updatedIngredient!.stock.toNumber()).toBe(40); // 100 - 60 = 40
     expect(updatedIngredient!.version).toBe(2); // 1 + 1 = 2
 
-    // 8. Kiểm tra Inventory legacy KHÔNG thay đổi
-    const legacyInventory = await prisma.inventory.findUnique({
-      where: { productId: fixture.productId },
+    // 8. Kiểm tra Product catalog không bị ảnh hưởng
+    const persistedProduct = await prisma.product.findUnique({
+      where: { id: fixture.productId },
     });
-    expect(legacyInventory!.quantity).toBe(99);
-    expect(legacyInventory!.reserved).toBe(0);
+    expect(persistedProduct!.isAvailable).toBe(true);
   });
 
   // ============================================================================

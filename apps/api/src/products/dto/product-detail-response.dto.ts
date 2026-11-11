@@ -8,6 +8,10 @@ export class ProductOptionDto {
   extraPrice: number;
 }
 
+/**
+ * Backward compatibility projection derived from recipe capacity.
+ * Not stored in or read from the legacy product inventories table.
+ */
 export class InventoryDto {
   quantity: number;
   reserved: number;
@@ -16,5 +20,6 @@ export class InventoryDto {
 
 export class ProductDetailResponseDto extends ProductResponseDto {
   options: ProductOptionDto[];
+  /** Compatibility projection calculated from recipe capacity; reserved is 0. */
   inventory: InventoryDto | null;
 }

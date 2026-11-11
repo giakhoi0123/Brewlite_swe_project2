@@ -128,9 +128,6 @@ describe('Orders Lifecycle & State Machine PostgreSQL Integration (Task 5.1 - Se
           where: { id: { in: optIds } },
         });
       }
-      await prisma.inventory.deleteMany({
-        where: { productId: { in: prodIds } },
-      });
       await prisma.product.deleteMany({
         where: { id: { in: prodIds } },
       });

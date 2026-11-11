@@ -8,13 +8,10 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { ProductResponseDto } from '../src/products/dto/product-response.dto';
 import { ProductDetailResponseDto } from '../src/products/dto/product-detail-response.dto';
 
-type LegacyStock = { quantity: number; reserved: number };
-
 interface FixtureConfig {
   isAvailable: boolean;
   ingredientStock: number;
   hasRecipe?: boolean;
-  legacyInventory?: LegacyStock | null;
 }
 
 describe('Products availability PostgreSQL integration', () => {
@@ -55,7 +52,6 @@ describe('Products availability PostgreSQL integration', () => {
       }
       if (fixtureId) {
         await prisma.productOption.deleteMany({ where: { productId: fixtureId } });
-        await prisma.inventory.deleteMany({ where: { productId: fixtureId } });
         await prisma.product.deleteMany({ where: { id: fixtureId } });
       }
       if (fixtureIngredientId) {
@@ -72,7 +68,6 @@ describe('Products availability PostgreSQL integration', () => {
     isAvailable,
     ingredientStock,
     hasRecipe = true,
-    legacyInventory = null,
   }: FixtureConfig) {
     // 1. Create dedicated test Ingredient
     await prisma.ingredient.create({
@@ -85,7 +80,7 @@ describe('Products availability PostgreSQL integration', () => {
       },
     });
 
-    // 2. Create Product with optional legacy inventory and options
+    // 2. Create Product without legacy inventory and with options
     await prisma.product.create({
       data: {
         id: fixtureId,
@@ -93,7 +88,6 @@ describe('Products availability PostgreSQL integration', () => {
         basePrice: 25000,
         imageUrl: 'https://example.com/task51-coffee.jpg',
         isAvailable,
-        ...(legacyInventory ? { inventory: { create: legacyInventory } } : {}),
         options: {
           create: [
             { id: toppingId, type: OptionType.TOPPING, name: 'Coffee jelly', extraPrice: 5000 },
@@ -147,11 +141,10 @@ describe('Products availability PostgreSQL integration', () => {
 
   it.each([
     {
-      label: 'available stock (recipe capacity determines availability regardless of legacy inventory)',
+      label: 'available stock (recipe capacity determines availability without any database inventory record)',
       isAvailable: true,
       ingredientStock: 100, // Regular needs 20g -> capacity = 5; Large needs 30g -> 3; Max = 5
       hasRecipe: true,
-      legacyInventory: { quantity: 8, reserved: 3 },
       canOrder: true,
       expectedStock: 5,
     },
@@ -160,25 +153,14 @@ describe('Products availability PostgreSQL integration', () => {
       isAvailable: true,
       ingredientStock: 0,
       hasRecipe: true,
-      legacyInventory: { quantity: 15, reserved: 0 },
       canOrder: false,
       expectedStock: 0,
-    },
-    {
-      label: 'recipe available while legacy inventory is 0 (recipe wins over legacy inventory)',
-      isAvailable: true,
-      ingredientStock: 100, // capacity = 5
-      hasRecipe: true,
-      legacyInventory: { quantity: 0, reserved: 0 },
-      canOrder: true,
-      expectedStock: 5,
     },
     {
       label: 'sale disabled (isAvailable = false blocks order even when ingredients are in stock)',
       isAvailable: false,
       ingredientStock: 100,
       hasRecipe: true,
-      legacyInventory: { quantity: 8, reserved: 0 },
       canOrder: false,
       expectedStock: 5,
     },
@@ -187,7 +169,6 @@ describe('Products availability PostgreSQL integration', () => {
       isAvailable: true,
       ingredientStock: 100,
       hasRecipe: false,
-      legacyInventory: { quantity: 8, reserved: 0 },
       canOrder: false,
       expectedStock: 0,
     },
@@ -197,11 +178,10 @@ describe('Products availability PostgreSQL integration', () => {
       isAvailable,
       ingredientStock,
       hasRecipe,
-      legacyInventory,
       canOrder,
       expectedStock,
     }) => {
-      await createFixture({ isAvailable, ingredientStock, hasRecipe, legacyInventory });
+      await createFixture({ isAvailable, ingredientStock, hasRecipe });
       const detail = await readAllEndpoints(isAvailable, canOrder);
 
       expect(detail.inventory).toEqual({
@@ -225,7 +205,6 @@ describe('Products availability PostgreSQL integration', () => {
       isAvailable: true,
       ingredientStock: 0,
       hasRecipe: true,
-      legacyInventory: null,
     });
     const before = await readAllEndpoints(true, false);
     expect(before.inventory?.availableStock).toBe(0);

@@ -19,6 +19,15 @@ async function bootstrap() {
   const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3006')
     .split(',')
     .map((origin) => origin.trim());
+  const allowedHeaders = [
+    'Content-Type',
+    'Authorization',
+    'Accept',
+    'Idempotency-Key',
+  ];
+  if (process.env.NODE_ENV !== 'production') {
+    allowedHeaders.push('X-Mock-Payment-Scenario');
+  }
 
   app.enableCors({
     origin: (origin, callback) => {
@@ -31,7 +40,7 @@ async function bootstrap() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    allowedHeaders,
   });
 
   const port = process.env.PORT || 3005;

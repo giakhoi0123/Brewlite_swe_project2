@@ -17,6 +17,13 @@ export const PAYMENT_RESULT_CODES = [
 ] as const;
 export type PaymentResultCode = (typeof PAYMENT_RESULT_CODES)[number];
 
+export const PAYMENT_ORDER_STATUSES = [
+  "PENDING",
+  "PAID",
+  "PAYMENT_FAILED",
+] as const;
+export type PaymentOrderStatus = (typeof PAYMENT_ORDER_STATUSES)[number];
+
 export const MOCK_PAYMENT_SCENARIOS = [
   "SUCCESS",
   "FAILURE",
@@ -39,4 +46,21 @@ export interface PaymentGatewayResult {
   resultCode: PaymentResultCode;
   retryable: boolean;
   processedAt: Date | null;
+}
+
+export interface PaymentResponse {
+  paymentId: string;
+  orderId: string;
+  method: PaymentMethod;
+  amount: number;
+  paymentStatus: PaymentStatus;
+  orderStatus: PaymentOrderStatus;
+  resultCode: PaymentResultCode;
+  retryable: boolean;
+  processedAt: string | null;
+}
+
+export interface PaymentExecutionResult {
+  httpStatus: number;
+  body: PaymentResponse;
 }

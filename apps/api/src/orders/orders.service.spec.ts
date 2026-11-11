@@ -82,10 +82,6 @@ describe('OrdersService & Pure Helpers Unit Tests (Task 5.1 - Lê Quang Điệp)
       orderStatusHistory: {
         create: jest.fn(),
       },
-      inventory: {
-        findUnique: jest.fn(),
-        update: jest.fn(),
-      },
     };
 
     prismaMock = {
@@ -700,12 +696,14 @@ describe('OrdersService & Pure Helpers Unit Tests (Task 5.1 - Lê Quang Điệp)
       expect(orderNumber1).not.toBe(orderNumber2); // Entropy đảm bảo tính duy nhất
     });
 
-    it('36. Không đọc hoặc cập nhật Inventory legacy', async () => {
+    it('36. Orders chỉ quản trị tồn kho qua Ingredient và Reservation (tách biệt hoàn toàn khỏi tồn kho thành phẩm)', async () => {
       setupHappyPathMocks();
       await service.createOrder(mockUserId, validDto);
 
-      expect(txMock.inventory.findUnique).not.toHaveBeenCalled();
-      expect(txMock.inventory.update).not.toHaveBeenCalled();
+      expect(txMock.$queryRaw).toHaveBeenCalled();
+      expect(txMock.ingredient.updateMany).toHaveBeenCalled();
+      expect(txMock.orderInventoryReservation.create).toHaveBeenCalled();
+      expect(txMock.orderReservationLine.create).toHaveBeenCalled();
     });
 
     it('37. Lỗi giữa transaction được propagate và rollback', async () => {
