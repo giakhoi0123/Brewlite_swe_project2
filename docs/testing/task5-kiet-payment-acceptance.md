@@ -1,6 +1,6 @@
 # Task 5 — Nguyễn Tuấn Kiệt payment acceptance record
 
-Ngày kiểm tra local: 2026-11-10.
+Ngày kiểm tra local gần nhất: 2026-11-12.
 
 ## Phạm vi theo Assignment
 
@@ -28,13 +28,13 @@ npm.cmd run build
 
 Kết quả:
 
-- Prisma: 9/9 migrations apply thành công; seed tạo lại dữ liệu thành công.
-- Unit/service: 19 suites, 309 tests passed.
-- PostgreSQL integration: 10 suites, 74 tests passed.
-- API E2E chạy tuần tự: 12 suites, 90 tests passed.
+- Prisma: 11/11 migrations apply thành công trên PostgreSQL 16 hoàn toàn sạch.
+- Unit/service backend: 19 suites, 311 tests passed; lint và Nest build passed.
+- PostgreSQL Payment integration: 1 suite, 4 tests passed trên database cô lập.
+- Payment integration xác nhận concurrent same-key chỉ gọi gateway một lần; PAID consume
+  reservation; FAILED hoàn stock đúng một lần; retry tái giữ kho; TIMEOUT giữ reservation ACTIVE.
 - ESLint: passed.
-- Nest build: passed.
-- Frontend: 17 suites, 128 tests passed; typecheck và Next.js production build passed.
+- Frontend: 19 suites, 138 tests passed; typecheck và Next.js production build passed.
 
 Test trọng tâm nằm tại:
 
@@ -45,6 +45,10 @@ Test trọng tâm nằm tại:
 ## Ghi chú ranh giới module
 
 Payment không nhận hoặc lưu số thẻ, CVV hay token ví thật. Số tiền luôn đọc từ Order. Inventory
-reservation thuộc Orders module. Việc tích hợp transaction-aware với vòng đời reservation của
-Orders và cộng điểm qua LoyaltyService của Duy được giữ lại cho bước phối hợp riêng; lần resolve
-conflict này không sửa code trong Orders hoặc Loyalty.
+reservation thuộc Orders module và đã được nối qua transaction-aware boundary:
+
+- Transaction A commit `Payment=PROCESSING` trước khi gọi gateway.
+- Gateway chạy ngoài database transaction.
+- Transaction B cập nhật Payment cùng Order/Reservation/stock/version/history.
+- FAILED hoàn kho và chuyển Reservation `ACTIVE -> RELEASED`; retry cùng Order dùng key mới,
+  kiểm tra lại stock và chuyển `RELEASED -> ACTIVE` trước khi gọi gateway.

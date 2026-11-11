@@ -40,21 +40,27 @@ else JWT hợp lệ
       DB --> API: Kết quả thanh toán đã lưu
       API --> UI: Trả lại cùng kết quả
     else Khóa mới
-      API -> DB: INSERT Payment PROCESSING
+      API -> DB: BEGIN Tx A; khóa/kiểm tra Order + Reservation
+      alt Retry sau PAYMENT_FAILED
+        API -> DB: Kiểm tra lại tồn kho; trừ kho\nReservation RELEASED -> ACTIVE\nOrder PAYMENT_FAILED -> PENDING; ghi history
+      else Order PENDING lần đầu
+        API -> DB: Xác nhận Reservation ACTIVE
+      end
+      API -> DB: INSERT Payment PROCESSING\nCOMMIT Tx A
       API -> Pay: pay(orderId, amount, method)
       alt Thanh toán thành công
         Pay --> API: PAID
-        API -> DB: BEGIN; Payment=PAID; Order=PAID; COMMIT
+        API -> DB: BEGIN Tx B; Payment=PAID; Order=PAID;\nReservation ACTIVE -> CONSUMED;\ntăng Order.version; ghi history; COMMIT
         API --> UI: 200 PAID + confirmation
         UI --> Customer: Xóa giỏ, hiển thị mã đơn
       else Thanh toán thất bại
         Pay --> API: FAILED
-        API -> DB: BEGIN; Payment=FAILED;\nOrder=PAYMENT_FAILED; hoàn kho 1 lần; COMMIT
-        API --> UI: 402 PAYMENT_DECLINED + reason
-        UI --> Customer: Cho phép thử lại với key mới
+        API -> DB: BEGIN Tx B; Payment=FAILED;\nOrder=PAYMENT_FAILED; hoàn kho 1 lần;\nReservation ACTIVE -> RELEASED;\ntăng Order.version; ghi history; COMMIT
+        API --> UI: 402 Payment response\nresultCode=PAYMENT_DECLINED
+        UI --> Customer: Giữ giỏ; thử lại cùng orderId với key mới
       else Timeout / UNKNOWN
         Pay --> API: timeout
-        API -> DB: Giữ Order=PENDING để đối soát
+        API -> DB: BEGIN Tx B; Payment=UNKNOWN;\ngiữ Order=PENDING + Reservation ACTIVE; COMMIT
         API --> UI: 202 Processing/Unknown
         UI --> Customer: Thông báo đang xác minh
       end
