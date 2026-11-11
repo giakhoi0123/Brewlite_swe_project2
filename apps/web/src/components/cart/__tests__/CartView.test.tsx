@@ -5,6 +5,7 @@ import { addCartItem } from '../../../lib/cart';
 import { ToastProvider } from '../../ui/ToastProvider';
 import { CartProvider } from '../CartProvider';
 import { CartView } from '../CartView';
+import { checkCartAvailability } from '../../../services/product-api';
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -110,6 +111,39 @@ describe('CartView', () => {
     expect(within(screen.getByTestId('cart-line-PROD_01')).getByTestId('line-subtotal')).toHaveTextContent('58.000');
     expect(screen.getByTestId('summary-shipping')).toHaveTextContent('Miễn phí');
     expect(screen.getByTestId('summary-total')).toHaveTextContent('128.000');
+  });
+
+  it('khóa nút tăng khi chạm mức nguyên liệu tối đa và hiện popup', async () => {
+    const mocked = checkCartAvailability as jest.Mock;
+    const original = mocked.getMockImplementation();
+    // Bạc Xỉu chỉ còn đủ nguyên liệu cho 1 ly (đang có 1 ly trong giỏ).
+    mocked.mockImplementation(async (items: any[]) => ({
+      canOrder: true,
+      items: items.map((it: any, idx: number) => ({
+        index: idx,
+        productId: it.productId,
+        sizeId: it.customization?.size ?? 'size-default',
+        requestedQuantity: it.quantity,
+        availableQuantity: it.productId === 'PROD_01' ? 1 : 99,
+        canOrder: true,
+      })),
+    }));
+    try {
+      seedCart();
+      renderCart();
+      const line = await screen.findByTestId('cart-line-PROD_01');
+      const plus = within(line).getByRole('button', { name: 'Tăng số lượng Bạc Xỉu 3 Tầng Sài Gòn' });
+      expect(await within(line).findByText('Tối đa 1 ly')).toBeInTheDocument();
+      expect(plus).toHaveAttribute('aria-disabled', 'true');
+
+      await userEvent.click(plus);
+      expect(within(line).getByTestId('line-qty')).toHaveTextContent('1');
+      expect(
+        await screen.findByText('Bạc Xỉu 3 Tầng Sài Gòn chỉ còn đủ nguyên liệu cho tối đa 1 ly. Không thể tăng thêm.'),
+      ).toBeInTheDocument();
+    } finally {
+      mocked.mockImplementation(original);
+    }
   });
 
   it('đổi size tính lại đơn giá', async () => {

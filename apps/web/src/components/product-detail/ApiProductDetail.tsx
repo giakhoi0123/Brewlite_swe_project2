@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { Minus, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -227,8 +228,9 @@ function ProductContent({ product }: { product: ProductDetail }) {
     if (stock > 0 && quantity > stock) {
       setQuantity(stock);
       setQuantityAdjustNotice('Số lượng đã được điều chỉnh theo nguyên liệu hiện có.');
+      showToast(`Nguyên liệu chỉ đủ cho tối đa ${stock} ly với lựa chọn này.`, 'error');
     }
-  }, [previewAvailability, quantity]);
+  }, [previewAvailability, quantity, showToast]);
 
   const isSizeSelected = Boolean(customization.size && customization.size.trim().length > 0);
 
@@ -256,6 +258,32 @@ function ProductContent({ product }: { product: ProductDetail }) {
 
   const total = calcUnitPrice(product.basePrice, customization, product.options) * quantity;
 
+  // Số ly tối đa còn đặt thêm được (đã trừ phần các món khác trong giỏ đang dùng chung nguyên liệu).
+  const maxQuantity =
+    previewAvailability && previewAvailability.availableQuantity > 0
+      ? Math.min(99, previewAvailability.availableQuantity)
+      : 1;
+  const isQuantityLocked =
+    !isAvailabilityReady || (previewAvailability?.availableQuantity ?? 0) === 0;
+  const isAtMaxQuantity = isAvailabilityReady && !isQuantityLocked && quantity >= maxQuantity;
+
+  const notifyOverLimit = () => {
+    showToast(
+      `Chỉ còn đủ nguyên liệu cho tối đa ${maxQuantity} ly. Không thể thêm nhiều hơn.`,
+      'error',
+    );
+  };
+
+  const changeQuantity = (next: number) => {
+    setQuantityAdjustNotice(null);
+    if (next > maxQuantity) {
+      setQuantity(maxQuantity);
+      notifyOverLimit();
+      return;
+    }
+    setQuantity(Math.max(1, next));
+  };
+
   const add = async (buyNow: boolean) => {
     if (!canAddToCart) return;
     const added = await addItem({
@@ -267,6 +295,7 @@ function ProductContent({ product }: { product: ProductDetail }) {
       customization,
       quantity,
     });
+    // Khi thất bại, CartProvider đã hiện popup stockError ghi rõ món và số ly tối đa.
     if (!added) return;
     showToast(`Đã thêm ${quantity}x ${product.name} vào giỏ!`);
     if (buyNow) router.push('/gio-hang');
@@ -420,41 +449,65 @@ function ProductContent({ product }: { product: ProductDetail }) {
             placeholder="Ghi chú cho món của bạn"
           />
         </label>
-        <label className="flex items-center justify-between gap-3">
-          Số lượng
-          <input
-            aria-label="Số lượng"
-            type="number"
-            min={1}
-            max={
-              previewAvailability && previewAvailability.availableQuantity > 0
-                ? Math.min(99, previewAvailability.availableQuantity)
-                : 1
-            }
-            disabled={!isAvailabilityReady || (previewAvailability && previewAvailability.availableQuantity === 0)}
-            value={quantity}
-            onChange={(e) => {
-              setQuantityAdjustNotice(null);
-              const rawValue = e.target.value.trim();
-              if (rawValue === '') {
-                setQuantity(1);
-                return;
-              }
-              const parsed = parseInt(rawValue, 10);
-              if (isNaN(parsed) || parsed < 1) {
-                setQuantity(1);
-                return;
-              }
-              const safeMax =
-                previewAvailability && previewAvailability.availableQuantity > 0
-                  ? Math.min(99, previewAvailability.availableQuantity)
-                  : 1;
-              const clamped = Math.min(parsed, safeMax);
-              setQuantity(Math.max(1, clamped));
-            }}
-            className="w-24 rounded-full px-4 py-2 bg-surface-container"
-          />
-        </label>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between gap-3">
+            <span id="quantity-label">Số lượng</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Giảm số lượng"
+                disabled={isQuantityLocked || quantity <= 1}
+                onClick={() => changeQuantity(quantity - 1)}
+                className="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Minus className="w-4 h-4" />
+              </button>
+              <input
+                aria-label="Số lượng"
+                aria-describedby={isAtMaxQuantity ? 'quantity-max-hint' : undefined}
+                type="number"
+                min={1}
+                max={maxQuantity}
+                disabled={isQuantityLocked}
+                value={quantity}
+                onChange={(e) => {
+                  const rawValue = e.target.value.trim();
+                  const parsed = parseInt(rawValue, 10);
+                  if (rawValue === '' || isNaN(parsed) || parsed < 1) {
+                    changeQuantity(1);
+                    return;
+                  }
+                  changeQuantity(parsed);
+                }}
+                className="w-20 text-center rounded-full px-3 py-2 bg-surface-container disabled:opacity-40"
+              />
+              <button
+                type="button"
+                aria-label="Tăng số lượng"
+                disabled={isQuantityLocked}
+                aria-disabled={isAtMaxQuantity}
+                onClick={() => {
+                  // Đã chạm mức tối đa: khóa tăng và hiện popup thay vì im lặng.
+                  if (isAtMaxQuantity) {
+                    notifyOverLimit();
+                    return;
+                  }
+                  changeQuantity(quantity + 1);
+                }}
+                className={`w-9 h-9 rounded-full bg-surface-container flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
+                  isAtMaxQuantity ? 'opacity-40 cursor-not-allowed' : ''
+                }`}
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          {isAtMaxQuantity && (
+            <p id="quantity-max-hint" className="text-secondary text-body-sm text-right">
+              Đã đạt số lượng tối đa ({maxQuantity} ly)
+            </p>
+          )}
+        </div>
         <p className="font-bold text-headline-sm">
           Tổng: <span data-testid="api-detail-total">{formatCurrency(total)}</span>
         </p>

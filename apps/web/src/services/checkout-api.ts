@@ -10,6 +10,8 @@ export interface OrderItemPayload {
   productName: string;
   quantity: number;
   unitPrice: number;
+  /** UUID của ProductOption (size + topping) — backend validate bằng POSTGRES_UUID_REGEX. */
+  selectedOptions?: string[];
 }
 
 export interface CreateOrderPayload {
@@ -79,6 +81,9 @@ export async function createOrderApi(
       productName: String(item.productName || ''),
       quantity: Number(item.quantity || 1),
       unitPrice: Number(item.unitPrice || 0),
+      ...(item.selectedOptions && item.selectedOptions.length > 0
+        ? { selectedOptions: item.selectedOptions }
+        : {}),
     })),
     voucherCode: payload.voucherCode || null,
     paymentMethod: payload.paymentMethod || 'WALLET',

@@ -282,6 +282,31 @@ describe('ApiProductDetail Canonical Availability Integration', () => {
     await userEvent.type(input, '10');
 
     expect(input).toHaveValue(5);
+    expect(
+      await screen.findByText('Chỉ còn đủ nguyên liệu cho tối đa 5 ly. Không thể thêm nhiều hơn.'),
+    ).toBeInTheDocument();
+  });
+
+  it('10b. nút tăng bị khóa khi chạm mức tối đa và hiện popup khi bấm thêm', async () => {
+    (checkCartAvailability as jest.Mock).mockImplementation(mockAvailabilityResponse(2, true, true));
+
+    renderComponent();
+    await screen.findByRole('heading', { name: mockProduct.name });
+    await screen.findByText('Còn tối đa 2 ly');
+
+    const input = screen.getByRole('spinbutton');
+    const plus = screen.getByRole('button', { name: 'Tăng số lượng' });
+
+    await userEvent.click(plus);
+    expect(input).toHaveValue(2);
+    expect(plus).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText('Đã đạt số lượng tối đa (2 ly)')).toBeInTheDocument();
+
+    await userEvent.click(plus);
+    expect(input).toHaveValue(2);
+    expect(
+      await screen.findByText('Chỉ còn đủ nguyên liệu cho tối đa 2 ly. Không thể thêm nhiều hơn.'),
+    ).toBeInTheDocument();
   });
 
   it('11. đổi option làm stock giảm thì quantity tự điều chỉnh và có thông báo', async () => {

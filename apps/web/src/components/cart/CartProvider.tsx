@@ -19,6 +19,8 @@ interface CartContextValue {
   /** false cho tới khi đọc xong localStorage — tránh nháy "giỏ trống". */
   isReady: boolean;
   stockError: string | null;
+  /** Số ly tối đa của từng dòng (theo lineId) từ lần kiểm tra nguyên liệu gần nhất. */
+  lineLimits: Record<string, number>;
   isChecking: boolean;
   canCheckout: boolean;
   items: CartItem[];
@@ -74,6 +76,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [items, voucherCode, hydrated]);
 
   const [stockError, setStockError] = useState<string | null>(null);
+  const [lineLimits, setLineLimits] = useState<Record<string, number>>({});
   const [isChecking, setIsChecking] = useState(false);
   const [canCheckout, setCanCheckout] = useState(false);
   const currentItems = useRef(items);
@@ -111,11 +114,42 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const result = next.length ? await checkCartAvailability(next) : null;
           if (requestRevision !== revision.current) return;
           if (result && !result.canOrder) {
-            setStockError('Không đủ số lượng.');
+            // Chỉ cập nhật giới hạn cho các dòng bị từ chối (các dòng khác giữ giới hạn đã xác nhận).
+            const failed = result.items
+              .filter((r) => !r.canOrder && next[r.index])
+              .map((r) => ({ line: next[r.index], max: r.availableQuantity }));
+            setLineLimits((prev) => {
+              const updated = { ...prev };
+              for (const { line, max } of failed) updated[line.lineId] = max;
+              return updated;
+            });
+            // Ưu tiên báo dòng vừa bị người dùng thay đổi.
+            const changed =
+              failed.find(({ line }) => {
+                const before = confirmedItems.current.find((c) => c.lineId === line.lineId);
+                return !before || before.quantity !== line.quantity;
+              }) ?? failed[0];
+            setStockError(
+              changed
+                ? changed.max > 0
+                  ? `${changed.line.name} chỉ còn đủ nguyên liệu cho tối đa ${changed.max} ly. Không thể tăng thêm.`
+                  : `${changed.line.name} hiện đã hết nguyên liệu.`
+                : 'Không đủ số lượng.',
+            );
             currentItems.current = confirmedItems.current;
             setItems(confirmedItems.current);
             resolve(false);
           } else {
+            if (result) {
+              const limits: Record<string, number> = {};
+              for (const r of result.items) {
+                const line = next[r.index];
+                if (line) limits[line.lineId] = r.availableQuantity;
+              }
+              setLineLimits(limits);
+            } else {
+              setLineLimits({});
+            }
             confirmedItems.current = next;
             setCanCheckout(next.length > 0);
             resolve(true);
@@ -156,6 +190,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     () => ({
       isReady: hydrated,
       stockError,
+      lineLimits,
       isChecking,
       canCheckout,
       items,
@@ -169,7 +204,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearCart,
       setVoucherCode,
     }),
-    [canCheckout, stockError, isChecking, hydrated, items, voucherCode, addItem, updateQuantity, updateSize, removeItem, clearCart],
+    [canCheckout, stockError, lineLimits, isChecking, hydrated, items, voucherCode, addItem, updateQuantity, updateSize, removeItem, clearCart],
   );
 
   return <CartContext.Provider value={value}>{stockError && <div role="alert" className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] bg-error-container text-error rounded-xl p-4 shadow-lg max-w-lg">{stockError}<button type="button" className="ml-4 underline" onClick={() => setStockError(null)}>Đóng</button></div>}{children}</CartContext.Provider>;

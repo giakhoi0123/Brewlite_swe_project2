@@ -12,11 +12,23 @@ interface CartLineItemProps {
   /** Món tương ứng trong thực đơn (để lấy badge và link chi tiết) — có thể không còn. */
   product?: MenuProduct;
   onQuantityChange: (quantity: number) => void;
+  /** Số ly tối đa theo nguyên liệu hiện có; undefined khi chưa kiểm tra xong. */
+  maxQuantity?: number;
+  /** Gọi khi người dùng cố tăng vượt maxQuantity. */
+  onQuantityLimit?: (max: number) => void;
   onSizeChange: (size: SizeCode) => void;
   onRemove: () => void;
 }
 
-export const CartLineItem: React.FC<CartLineItemProps> = ({ item, product, onQuantityChange, onSizeChange, onRemove }) => {
+export const CartLineItem: React.FC<CartLineItemProps> = ({
+  item,
+  product,
+  onQuantityChange,
+  maxQuantity,
+  onQuantityLimit,
+  onSizeChange,
+  onRemove,
+}) => {
   const { customization } = item;
   const sizes = item.productOptions
     ? item.productOptions.filter((o) => o.type === 'SIZE').map((o) => ({ code: o.id, label: o.name, extraPrice: o.extraPrice }))
@@ -27,6 +39,7 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({ item, product, onQua
   const toppings = customization.toppingIds
     .map((id) => toppingOptions.find((t) => t.id === id))
     .filter((t): t is NonNullable<typeof t> => Boolean(t));
+  const isAtStockLimit = maxQuantity !== undefined && item.quantity >= maxQuantity;
   const detailHref = item.productOptions ? `/products/${item.productId}` : product ? `/products/${product.slug}` : undefined;
 
   return (
@@ -127,12 +140,25 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({ item, product, onQua
                 type="button"
                 aria-label={`Tăng số lượng ${item.name}`}
                 disabled={item.quantity >= MAX_LINE_QUANTITY}
-                onClick={() => onQuantityChange(item.quantity + 1)}
-                className="w-7 h-7 rounded-full bg-surface-container-lowest text-on-surface flex items-center justify-center hover:bg-surface-container-high active:scale-95 transition-all shadow-sm disabled:opacity-40"
+                aria-disabled={isAtStockLimit}
+                onClick={() => {
+                  // Đã chạm mức nguyên liệu tối đa: khóa tăng và hiện popup.
+                  if (isAtStockLimit) {
+                    onQuantityLimit?.(maxQuantity);
+                    return;
+                  }
+                  onQuantityChange(item.quantity + 1);
+                }}
+                className={`w-7 h-7 rounded-full bg-surface-container-lowest text-on-surface flex items-center justify-center hover:bg-surface-container-high active:scale-95 transition-all shadow-sm disabled:opacity-40 ${
+                  isAtStockLimit ? 'opacity-40 cursor-not-allowed' : ''
+                }`}
               >
                 <Plus className="w-4 h-4" />
               </button>
             </div>
+            {isAtStockLimit && maxQuantity > 0 && (
+              <span className="text-body-sm text-secondary">Tối đa {maxQuantity} ly</span>
+            )}
             <div className="text-right min-w-[90px]">
               <span className="font-display text-label-sm text-on-surface-variant block">Thành tiền</span>
               <span data-testid="line-subtotal" className="font-display text-headline-sm font-bold text-secondary">

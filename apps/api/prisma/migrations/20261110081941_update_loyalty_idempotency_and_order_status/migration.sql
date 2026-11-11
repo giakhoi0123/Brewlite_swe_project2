@@ -8,7 +8,9 @@
 CREATE TYPE "LoyaltyType" AS ENUM ('EARN', 'REDEEM', 'REVERSE');
 
 -- AlterEnum
-ALTER TYPE "OrderStatus" ADD VALUE 'PAID';
+-- 'PAID' đã được thêm ở migration 20261109230000_add_payment_attempts (xung đột khi merge
+-- nhánh payments + loyalty). Dùng IF NOT EXISTS để migration chạy được trên DB mới lẫn DB cũ.
+ALTER TYPE "OrderStatus" ADD VALUE IF NOT EXISTS 'PAID';
 
 -- AlterTable
 ALTER TABLE "loyalty_logs" ADD COLUMN     "amount" DECIMAL(10,2),
