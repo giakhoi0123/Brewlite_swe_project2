@@ -65,7 +65,7 @@ export default function BaristaDashboardPage() {
   }, [token]);
 
   useEffect(() => {
-    if (!authLoading && user && user.role === 'BARISTA') {
+    if (!authLoading && user && (user.role === 'BARISTA' || user.role === 'MANAGER')) {
       void loadOrders();
     }
   }, [authLoading, user, loadOrders]);
@@ -126,7 +126,7 @@ export default function BaristaDashboardPage() {
   }
 
   // Chặn nghiêm ngặt: Tài khoản CUSTOMER không có quyền truy cập Barista Dashboard
-  if (user.role !== 'BARISTA') {
+  if (user.role !== 'BARISTA' && user.role !== 'MANAGER') {
     return (
       <div className="max-w-[500px] mx-auto px-4 py-16 text-center">
         <div className="w-16 h-16 rounded-full bg-error-container text-error flex items-center justify-center mx-auto mb-4">
@@ -137,7 +137,7 @@ export default function BaristaDashboardPage() {
         </h1>
         <p className="text-body-md text-on-surface-variant mb-6">
           Tài khoản của bạn ({user.email}) mang quyền{' '}
-          <strong className="text-on-surface">{user.role}</strong>. Chỉ nhân sự quầy pha chế (BARISTA) mới được truy cập khu vực này.
+          <strong className="text-on-surface">{user.role}</strong>. Chỉ nhân sự quầy pha chế (BARISTA / MANAGER) mới được truy cập khu vực này.
         </p>
         <Link
           href="/"
