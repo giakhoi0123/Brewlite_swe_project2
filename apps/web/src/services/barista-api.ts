@@ -70,7 +70,33 @@ export async function fetchBaristaOrdersApi(token?: string | null): Promise<Bari
       );
     }
 
-    return Array.isArray(data) ? data : data?.orders || [];
+    const rawList = Array.isArray(data) ? data : data?.data || data?.orders || [];
+    return rawList.map((o: any) => ({
+      id: o.id || o.orderId,
+      orderNumber: o.orderNumber,
+      status: o.status,
+      total: Number(o.total || 0),
+      createdAt: o.createdAt,
+      customerName: o.customer?.fullName || o.customerName || 'Khách hàng',
+      items: (o.items || []).map((it: any) => ({
+        id: it.id,
+        productName: it.productName,
+        quantity: it.quantity,
+        size:
+          it.size ||
+          it.options?.find((opt: any) => opt.type === 'SIZE')?.name ||
+          (Array.isArray(it.optionsSnapshot)
+            ? it.optionsSnapshot.find((opt: any) => opt.type === 'SIZE')?.name
+            : undefined),
+        toppings:
+          it.toppings ||
+          it.options?.filter((opt: any) => opt.type === 'TOPPING')?.map((opt: any) => opt.name) ||
+          (Array.isArray(it.optionsSnapshot)
+            ? it.optionsSnapshot.filter((opt: any) => opt.type === 'TOPPING')?.map((opt: any) => opt.name)
+            : []),
+        notes: it.notes,
+      })),
+    }));
   } catch (err: any) {
     if (err instanceof BaristaApiError) throw err;
     throw new BaristaApiError(
@@ -94,12 +120,20 @@ export async function transitionOrderStatusApi(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  // Khớp chính xác với Backend BaristaController endpoints:
+  // - PREPARING: POST /api/barista/orders/:id/accept
+  // - READY:     POST /api/barista/orders/:id/ready
+  // - COMPLETED: POST /api/barista/orders/:id/complete
+  let action = 'accept';
+  if (nextStatus === 'PREPARING') action = 'accept';
+  else if (nextStatus === 'READY') action = 'ready';
+  else if (nextStatus === 'COMPLETED') action = 'complete';
+
   try {
-    const res = await fetch(`${API_BASE_URL}/barista/orders/${orderId}/status`, {
-      method: 'PATCH',
+    const res = await fetch(`${API_BASE_URL}/barista/orders/${orderId}/${action}`, {
+      method: 'POST',
       headers,
       credentials: 'include',
-      body: JSON.stringify({ status: nextStatus }),
     });
 
     const isJson = res.headers.get('content-type')?.includes('application/json');
@@ -119,7 +153,22 @@ export async function transitionOrderStatusApi(
       );
     }
 
-    return data as BaristaOrder;
+    return {
+      id: data.id || data.orderId || orderId,
+      orderNumber: data.orderNumber,
+      status: data.status || nextStatus,
+      total: Number(data.total || 0),
+      createdAt: data.createdAt,
+      customerName: data.customer?.fullName || 'Khách hàng',
+      items: (data.items || []).map((it: any) => ({
+        id: it.id,
+        productName: it.productName,
+        quantity: it.quantity,
+        size: it.options?.find((opt: any) => opt.type === 'SIZE')?.name,
+        toppings: it.options?.filter((opt: any) => opt.type === 'TOPPING')?.map((opt: any) => opt.name) || [],
+        notes: it.notes,
+      })),
+    };
   } catch (err: any) {
     if (err instanceof BaristaApiError) throw err;
     throw new BaristaApiError(

@@ -76,8 +76,7 @@ class OrderReservationLine {
   +Decimal amount
 }
 
-class Payment <<application>> {
-  .. Mock Gateway Adapter (No DB Table) ..
+class Payment {
   +UUID id
   +PaymentMethod method
   +PaymentStatus status
@@ -139,8 +138,8 @@ enum IngredientUnit {
   PIECE
 }
 enum DiscountType {
-  PERCENT
-  FIXED
+  PERCENTAGE
+  FIXED_AMOUNT
 }
 enum LoyaltyType {
   EARN
