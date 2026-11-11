@@ -53,8 +53,8 @@ const config: Config = {
         'on-error': '#ffffff',
       },
       fontFamily: {
-        sans: ['var(--font-inter)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        display: ['var(--font-jakarta)', 'var(--font-inter)', 'ui-sans-serif', 'sans-serif'],
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        display: ['"Plus Jakarta Sans"', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       fontSize: {
         'headline-display': ['40px', { lineHeight: '48px', letterSpacing: '-0.02em', fontWeight: '700' }],
