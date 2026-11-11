@@ -7,6 +7,7 @@ import { OptionType } from '@prisma/client';
 describe('ProductsController', () => {
   let controller: ProductsController;
   let service: jest.Mocked<ProductsService>;
+  let availabilityService: jest.Mocked<AvailabilityService>;
 
   const mockProductResponse = {
     id: 'a0000000-0000-0000-0000-000000000001',
@@ -41,9 +42,17 @@ describe('ProductsController', () => {
       findOne: jest.fn(),
     };
 
+    const mockAvailabilityService = {
+      check: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ProductsController],
-      providers: [{ provide: AvailabilityService, useValue: { check: jest.fn() } },
+      providers: [
+        {
+          provide: AvailabilityService,
+          useValue: mockAvailabilityService,
+        },
         {
           provide: ProductsService,
           useValue: mockService,
@@ -53,6 +62,7 @@ describe('ProductsController', () => {
 
     controller = module.get<ProductsController>(ProductsController);
     service = module.get(ProductsService);
+    availabilityService = module.get(AvailabilityService);
   });
 
   describe('getProducts', () => {
@@ -83,6 +93,42 @@ describe('ProductsController', () => {
 
       expect(service.findOne).toHaveBeenCalledWith('a0000000-0000-0000-0000-000000000001');
       expect(result).toEqual(mockProductDetailResponse);
+    });
+  });
+
+  describe('checkAvailability', () => {
+    it('should delegate cart-aware availability checking to AvailabilityService', async () => {
+      const mockResult = {
+        canOrder: true,
+        items: [
+          {
+            index: 0,
+            productId: 'a0000000-0000-0000-0000-000000000001',
+            sizeId: 'b0000000-0000-0000-0000-000000000001',
+            requestedQuantity: 2,
+            availableQuantity: 10,
+            canOrder: true,
+          },
+        ],
+      };
+
+      availabilityService.check.mockResolvedValue(mockResult);
+
+      const dto = {
+        items: [
+          {
+            productId: 'a0000000-0000-0000-0000-000000000001',
+            sizeId: 'b0000000-0000-0000-0000-000000000001',
+            toppingIds: [],
+            quantity: 2,
+          },
+        ],
+      };
+
+      const result = await controller.checkAvailability(dto);
+
+      expect(availabilityService.check).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(mockResult);
     });
   });
 });

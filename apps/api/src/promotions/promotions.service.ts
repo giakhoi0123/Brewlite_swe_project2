@@ -6,7 +6,11 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ValidatePromotionDto } from './dto/validate-promotion.dto';
 import { CreatePromotionDto } from './dto/create-promotion.dto';
-import { DiscountType } from '@prisma/client';
+import { DiscountType, Prisma } from '@prisma/client';
+
+export type PromotionDatabaseClient =
+  | Pick<PrismaService, 'promotion'>
+  | Prisma.TransactionClient;
 
 @Injectable()
 export class PromotionsService {
@@ -52,9 +56,12 @@ export class PromotionsService {
     });
   }
 
-  async validateAndCalculateDiscount(dto: ValidatePromotionDto) {
+  async validateAndCalculateDiscount(
+    dto: ValidatePromotionDto,
+    db: PromotionDatabaseClient = this.prisma,
+  ) {
     const code = dto.code.toUpperCase();
-    const promotion = await this.prisma.promotion.findUnique({
+    const promotion = await db.promotion.findUnique({
       where: { code },
     });
 

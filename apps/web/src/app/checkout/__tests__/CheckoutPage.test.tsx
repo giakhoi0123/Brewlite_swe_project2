@@ -61,6 +61,8 @@ describe('CheckoutPage', () => {
 
     (useCart as jest.Mock).mockReturnValue({
       isReady: true,
+      isChecking: false,
+      canCheckout: true,
       items: [mockCartItem],
       totalQuantity: 2,
       totalPrice: 50000,

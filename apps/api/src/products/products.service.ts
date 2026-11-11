@@ -47,16 +47,28 @@ export class ProductsService {
         extraPrice: Number(opt.extraPrice),
       })),
       inventory: {
-            quantity: this.recipeCapacity(product),
-            reserved: 0,
-            availableStock: this.recipeCapacity(product),
-          },
+        quantity: this.recipeCapacity(product),
+        reserved: 0,
+        availableStock: this.recipeCapacity(product),
+      },
     };
   }
 
   private recipeCapacity(product: ProductWithInventory): number {
-    const sizes = (product.options ?? []).filter(o => o.type === 'SIZE');
-    return Math.max(0, ...sizes.map(size => size.recipes.length ? Math.min(...size.recipes.map(r => r.amount.gt(0) ? Math.max(0, r.ingredient.stock.div(r.amount).floor().toNumber()) : 0)) : 0));
+    const sizes = (product.options ?? []).filter((o) => o.type === 'SIZE');
+    return Math.max(
+      0,
+      ...sizes.map((size) =>
+        size.recipes.length
+          ? Math.min(
+              ...size.recipes.map((r) =>
+                r.amount.gt(0)
+                  ? Math.max(0, r.ingredient.stock.div(r.amount).floor().toNumber())
+                  : 0,
+              ),
+            )
+          : 0,
+      ),
+    );
   }
-
 }

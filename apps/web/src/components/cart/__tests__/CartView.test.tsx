@@ -6,6 +6,29 @@ import { ToastProvider } from '../../ui/ToastProvider';
 import { CartProvider } from '../CartProvider';
 import { CartView } from '../CartView';
 
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+    back: jest.fn(),
+  }),
+}));
+
+jest.mock('../../../services/product-api', () => ({
+  ...jest.requireActual('../../../services/product-api'),
+  checkCartAvailability: jest.fn().mockImplementation(async (items: any[]) => ({
+    canOrder: true,
+    items: items.map((it: any, idx: number) => ({
+      index: idx,
+      productId: it.productId,
+      sizeId: it.sizeId ?? it.customization?.size ?? 'size-default',
+      requestedQuantity: it.quantity,
+      availableQuantity: 99,
+      canOrder: true,
+    })),
+  })),
+}));
+
 function seedCart() {
   let items = addCartItem([], {
     productId: 'PROD_03',
@@ -37,7 +60,30 @@ function renderCart() {
 }
 
 describe('CartView', () => {
-  beforeEach(() => window.localStorage.clear());
+  beforeEach(() => {
+    window.localStorage.clear();
+    global.fetch = jest.fn().mockImplementation(async (url: string, init?: any) => {
+      if (typeof url === 'string' && url.includes('/api/promotions/validate')) {
+        const body = JSON.parse(init?.body || '{}');
+        if (body.code === 'COFFEE10') {
+          return {
+            ok: true,
+            json: async () => ({
+              code: 'COFFEE10',
+              discountAmount: 10000,
+            }),
+          };
+        }
+        return {
+          ok: false,
+          json: async () => ({
+            message: 'Mã giảm giá không hợp lệ hoặc đã hết hạn.',
+          }),
+        };
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+  });
 
   it('hiển thị trạng thái trống khi chưa có món', async () => {
     renderCart();
@@ -100,12 +146,12 @@ describe('CartView', () => {
     const input = await screen.findByLabelText('Mã ưu đãi / Voucher');
     await userEvent.type(input, 'SAIMA');
     await userEvent.click(screen.getByRole('button', { name: 'Áp dụng' }));
-    expect(screen.getByText('Mã giảm giá không hợp lệ hoặc đã hết hạn.')).toBeInTheDocument();
+    expect(await screen.findByText('Mã giảm giá không hợp lệ hoặc đã hết hạn.')).toBeInTheDocument();
 
     await userEvent.clear(input);
     await userEvent.type(input, 'coffee10');
     await userEvent.click(screen.getByRole('button', { name: 'Áp dụng' }));
-    expect(screen.getByTestId('summary-discount')).toHaveTextContent('10.000');
+    expect(await screen.findByTestId('summary-discount')).toHaveTextContent('10.000');
     // 99.000 - 10.000 + 15.000
     expect(screen.getByTestId('summary-total')).toHaveTextContent('104.000');
   });
