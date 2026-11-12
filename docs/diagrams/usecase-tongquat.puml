@@ -38,7 +38,6 @@ rectangle "Hệ thống BrewLite" {
 
   usecase "Xem hàng đợi đơn\nđã thanh toán\n(FR-10)" as UC_Queue
   usecase "Cập nhật trạng thái\nđơn hàng\n(FR-10)" as UC_Status
-  usecase "Hủy đơn PAID và\nhoàn tiền (FR-10)" as UC_CancelPaid
 }
 
 ' Chức năng của khách hàng
@@ -54,7 +53,6 @@ Customer -- UC_Loyalty
 Barista -- UC_Auth
 Barista -- UC_Queue
 Barista -- UC_Status
-Barista -- UC_CancelPaid
 
 ' Hệ thống thanh toán bên ngoài
 Gateway -- UC_Payment

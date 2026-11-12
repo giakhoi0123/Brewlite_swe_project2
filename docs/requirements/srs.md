@@ -8,7 +8,7 @@
 | FR-02 | Chi tiết và giỏ hàng | Must | Chỉ nhận size/topping hợp lệ; thêm, sửa, xóa và tính tổng đúng. |
 | FR-03 | Tài khoản và quyền | Must | Mật khẩu được băm; API trả 401 khi JWT sai và 403 khi sai role. |
 | FR-04 | Tạo đơn | Must | Backend tính lại giá; tạo Order PENDING và OrderItem snapshot trong transaction. |
-| FR-05 | Thanh toán mô phỏng | Must | Hỗ trợ WALLET/CARD; cùng Idempotency-Key không ghi nhận hai lần. |
+| FR-05 | Thanh toán VNPay Sandbox | Must | Chỉ hỗ trợ VNPay Sandbox; xác thực checksum Return/IPN và cùng Idempotency-Key không ghi nhận hai lần. |
 | FR-06 | Xác nhận, lịch sử và theo dõi | Must | Khách nhận mã đơn và chỉ xem đơn của chính mình. |
 | FR-07 | Vòng đời và tồn kho | Must | Tồn kho không âm; chuyển trạng thái sai bị từ chối. |
 | FR-08 | Khuyến mãi | Should | Chỉ áp dụng mã hợp lệ, còn hạn và đủ điều kiện. |
@@ -25,4 +25,6 @@
 | NFR-04 | Toàn vẹn | Must | Transaction, tồn kho không âm và retry không tạo dữ liệu trùng. |
 | NFR-05 | Triển khai | Must | Có thể chạy bằng README và Docker Compose mà không sửa source. |
 | NFR-06 | Khả dụng giao diện | Should | Không tràn ngang ở 360 px; nút có disable/loading. |
+
+Hủy đơn đã thanh toán và hoàn tiền VNPay không thuộc phạm vi bài này.
 | NFR-07 | Bảo trì | Should | Thay đổi API/schema đi kèm contract, migration, test và docs. |

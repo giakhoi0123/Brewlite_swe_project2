@@ -6,8 +6,8 @@ Ngày kiểm tra local gần nhất: 2026-11-12.
 
 | Yêu cầu Task 5 của Kiệt | Minh chứng |
 |---|---|
-| Mock Payment Ví/Thẻ | `MockPaymentGatewayAdapter` hỗ trợ cả `WALLET` và `CARD`. |
-| Success/failure/processing/timeout/unknown | Unit test adapter và API mapping sang HTTP `200`, `402`, `202`. |
+| VNPay Sandbox | `VnpayPaymentGatewayAdapter` tạo URL v2.1.0, nhân số tiền với 100 và ký HMAC-SHA512. |
+| Return/IPN | Return chỉ chuyển về UI; IPN xác thực checksum, mã giao dịch và số tiền trước khi cập nhật dữ liệu. |
 | Idempotency | Unique `payments.idempotency_key`, request fingerprint và replay response đã lưu. |
 | Không ghi nhận trùng | PostgreSQL integration test gửi hai request đồng thời, kiểm tra một row Payment, cùng `paymentId` và gateway chỉ được gọi một lần. |
 | Retry sau decline | Service và integration test xác nhận key mới tạo attempt mới, chuyển `PAYMENT_FAILED` sang `PAID`. |
@@ -28,23 +28,26 @@ npm.cmd run build
 
 Kết quả:
 
-- Prisma: 11/11 migrations apply thành công trên PostgreSQL 16 hoàn toàn sạch.
-- Unit/service backend: 19 suites, 311 tests passed; lint và Nest build passed.
-- PostgreSQL Payment integration: 1 suite, 4 tests passed trên database cô lập.
+- Prisma schema hợp lệ; migration VNPay mới đã được sinh nhưng chưa chạy lại trên PostgreSQL local
+  trong lần cập nhật này vì Docker daemon không hoạt động.
+- Unit/service backend: 20 suites, 312 tests passed; lint và Nest build passed.
+- PostgreSQL Payment integration trước đó: 1 suite, 4 tests passed trên database cô lập; cần chạy
+  lại sau khi bật Docker để áp dụng migration VNPay.
 - Payment integration xác nhận concurrent same-key chỉ gọi gateway một lần; PAID consume
   reservation; FAILED hoàn stock đúng một lần; retry tái giữ kho; TIMEOUT giữ reservation ACTIVE.
 - ESLint: passed.
-- Frontend: 19 suites, 138 tests passed; typecheck và Next.js production build passed.
+- Frontend: 19 suites, 139 tests passed; typecheck và Next.js production build passed.
 
 Test trọng tâm nằm tại:
 
-- `apps/api/src/payments/adapters/mock-payment-gateway.adapter.spec.ts`
+- `apps/api/src/payments/adapters/vnpay-payment-gateway.adapter.spec.ts`
+- `apps/api/src/payments/adapters/mock-payment-gateway.adapter.spec.ts` (test-only)
 - `apps/api/src/payments/payments.service.spec.ts`
 - `apps/api/test/payments-integration.e2e-spec.ts`
 
 ## Ghi chú ranh giới module
 
-Payment không nhận hoặc lưu số thẻ, CVV hay token ví thật. Số tiền luôn đọc từ Order. Inventory
+Payment không nhận hoặc lưu số thẻ, CVV hay thông tin ngân hàng. Số tiền luôn đọc từ Order. Inventory
 reservation thuộc Orders module và đã được nối qua transaction-aware boundary:
 
 - Transaction A commit `Payment=PROCESSING` trước khi gọi gateway.

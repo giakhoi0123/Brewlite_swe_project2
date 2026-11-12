@@ -1,172 +1,112 @@
 @startuml
 !pragma layout smetana
+top to bottom direction
+
+title Class Diagram - Checkout và VNPay
+
 skinparam shadowing false
 skinparam defaultFontName "Noto Sans"
+skinparam packageStyle rectangle
+skinparam nodesep 25
+skinparam ranksep 30
 skinparam class {
   BackgroundColor #FFFDF8
   BorderColor #5D4037
   ArrowColor #5D4037
 }
 hide circle
+hide empty members
 
-class User {
-  +UUID id
-  +String email
-  +String passwordHash
-  +UserRole role
-  +DateTime createdAt
-}
+package "NestJS API" {
+  class OrdersController <<controller>> {
+    +createOrder()
+  }
 
-class Product {
-  +UUID id
-  +String name
-  +Decimal basePrice
-  +String imageUrl
-  +Boolean isAvailable
-}
+  class PaymentsController <<controller>> {
+    +createPayment()
+    +handleVnpayIpn()
+    +getPaymentStatus()
+  }
 
-class ProductOption {
-  +UUID id
-  +OptionType type
-  +String name
-  +Decimal extraPrice
-}
+  class OrdersService <<service>> {
+    +createOrder()
+    +transitionOrderStatusInTransaction()
+    -lockIngredients()
+  }
 
-class OptionRecipe {
-  +UUID productOptionId
-  +UUID ingredientId
-  +Decimal amount
-}
+  class PaymentsService <<service>> {
+    +processPayment()
+    +handleVnpayIpn()
+    +resolveVnpayReturn()
+    +getPaymentStatus()
+  }
 
-class Ingredient {
-  +UUID id
-  +String name
-  +IngredientUnit unit
-  +Decimal stock
-  +Int version
-}
+  interface PaymentGatewayPort {
+    +process()
+    +verifyCallback()
+  }
 
-class Order {
-  +UUID id
-  +String orderNumber
-  +OrderStatus status
-  +Decimal subtotal
-  +Decimal discount
-  +Decimal total
-  +DateTime createdAt
+  class VnpayPaymentGatewayAdapter <<adapter>> {
+    +process()
+    +verifyCallback()
+  }
 }
 
-class OrderItem {
-  +UUID id
-  +String productNameSnapshot
-  +Decimal unitPriceSnapshot
-  +Int quantity
-  +String optionsSnapshot
+package "Prisma / PostgreSQL" {
+  class User <<entity>> {
+    +id: UUID
+    +loyaltyPoints: Int
+  }
+
+  class Order <<entity>> {
+    +id: UUID
+    +status: OrderStatus
+    +total: Decimal
+    +pointsRedeemed: Int
+    +pointsEarned: Int
+  }
+
+  class Payment <<entity>> {
+    +id: UUID
+    +amount: Decimal
+    +status: PaymentStatus
+    +providerTxnRef: String?
+    +processedAt: DateTime?
+  }
+
+  class OrderInventoryReservation <<entity>> {
+    +id: UUID
+    +status: ReservationStatus
+  }
+
+  class Promotion <<entity>> {
+    +id: UUID
+    +code: String
+    +usedCount: Int
+  }
+
+  class LoyaltyLog <<entity>> {
+    +id: UUID
+    +points: Int
+    +type: LoyaltyType
+  }
 }
 
-class OrderInventoryReservation {
-  +UUID id
-  +ReservationStatus status
-  +Int version
-  +DateTime createdAt
-}
+OrdersController --> OrdersService
+PaymentsController --> PaymentsService
+PaymentsService --> OrdersService : cập nhật đơn/kho
+PaymentsService --> PaymentGatewayPort
+VnpayPaymentGatewayAdapter ..|> PaymentGatewayPort
 
-class OrderReservationLine {
-  +UUID id
-  +Decimal amount
-}
+OrdersService ..> Order
+OrdersService ..> OrderInventoryReservation
+PaymentsService ..> Payment
 
-class Payment {
-  +UUID id
-  +PaymentMethod method
-  +PaymentStatus status
-  +String idempotencyKey
-  +Decimal amount
-}
+User "1" -- "0..*" Order
+User "1" -- "0..*" LoyaltyLog
+Order "1" *-- "0..*" Payment
+Order "1" *-- "0..1" OrderInventoryReservation
+Order "0..*" --> "0..1" Promotion
+Order "1" -- "0..*" LoyaltyLog
 
-class Promotion {
-  +UUID id
-  +String code
-  +DiscountType type
-  +Decimal value
-  +DateTime expiresAt
-}
-
-class LoyaltyTransaction {
-  +UUID id
-  +Int points
-  +LoyaltyType type
-  +DateTime createdAt
-}
-
-enum UserRole {
-  CUSTOMER
-  BARISTA
-  MANAGER
-}
-enum OrderStatus {
-  PENDING
-  PAID
-  PAYMENT_FAILED
-  PREPARING
-  READY
-  COMPLETED
-  CANCELLED
-}
-enum ReservationStatus {
-  ACTIVE
-  CONSUMED
-  RELEASED
-}
-enum PaymentStatus {
-  PROCESSING
-  PAID
-  FAILED
-  UNKNOWN
-}
-enum PaymentMethod {
-  WALLET
-  CARD
-}
-enum OptionType {
-  SIZE
-  TOPPING
-}
-enum IngredientUnit {
-  G
-  ML
-  PIECE
-}
-enum DiscountType {
-  PERCENTAGE
-  FIXED_AMOUNT
-}
-enum LoyaltyType {
-  EARN
-  REDEEM
-  REVERSE
-}
-
-User "1" -- "0..*" Order : places
-Order "1" *-- "1..*" OrderItem
-Order "1" -- "0..*" Payment : processed by
-Product "1" -- "0..*" OrderItem : snapshot from
-Product "1" *-- "0..*" ProductOption
-ProductOption "1" *-- "0..*" OptionRecipe
-OptionRecipe "0..*" -- "1" Ingredient : consumes
-Order "1" -- "0..1" OrderInventoryReservation : reserves
-OrderInventoryReservation "1" *-- "1..*" OrderReservationLine
-OrderReservationLine "0..*" -- "1" Ingredient : holds stock
-Order "0..*" -- "0..1" Promotion : applies
-User "1" -- "0..*" LoyaltyTransaction
-Order "0..1" -- "0..*" LoyaltyTransaction
-User --> UserRole
-Order --> OrderStatus
-OrderInventoryReservation --> ReservationStatus
-Payment --> PaymentStatus
-Payment --> PaymentMethod
-ProductOption --> OptionType
-Ingredient --> IngredientUnit
-Promotion --> DiscountType
-LoyaltyTransaction --> LoyaltyType
 @enduml

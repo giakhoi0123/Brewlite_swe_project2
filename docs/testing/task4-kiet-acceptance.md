@@ -55,7 +55,7 @@ path-specific `.gitignore` rule.
 | CI run that detects a defect | **Missing** | No intentional failing test was pushed. This evidence must use a separate temporary branch and must not be merged. |
 | Successful CI run | Complete | PR #8 workflow run #9 completed successfully, including all four jobs. |
 | Required status check/merge blocking | **Unverified** | Owner must enable a `main` ruleset/branch protection requiring `Quality Gate Summary` after a real run creates the check. |
-| Sprint 2 Payment mock contract | Contract decision complete | Endpoint, JWT/key, WALLET/CARD, outcome/status/error matrices and deterministic fixtures exist. A determinate decline uses HTTP `402 PAYMENT_DECLINED`. |
+| Sprint 2 Payment contract | Superseded by VNPay Sandbox | Hợp đồng hiện hành nằm tại `docs/contracts/payments-api.md`; mock cũ chỉ còn dùng trong automated tests. |
 
 ## Verified GitHub state
 
