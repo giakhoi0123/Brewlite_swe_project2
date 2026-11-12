@@ -1,8 +1,7 @@
-'use client';
+"use client";
 
-import React, { useMemo, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import React, { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertCircle,
   ArrowLeft,
@@ -13,29 +12,31 @@ import {
   RotateCcw,
   ShieldCheck,
   ShoppingBag,
-  Wallet,
-} from 'lucide-react';
-import { useAuth } from '../../components/auth/AuthProvider';
-import { useCart } from '../../components/cart/CartProvider';
-import { computeCartSummary } from '../../lib/cart-summary';
+} from "lucide-react";
+import { useAuth } from "../../components/auth/AuthProvider";
+import { useCart } from "../../components/cart/CartProvider";
+import { computeCartSummary } from "../../lib/cart-summary";
 import {
   CheckoutApiError,
   createOrderApi,
   PaymentMethod,
   PaymentResponse,
   processPaymentApi,
-} from '../../services/checkout-api';
-import { formatCurrency } from '../../utils/format';
+} from "../../services/checkout-api";
+import { formatCurrency } from "../../utils/format";
 
 function createIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
 
   // RFC 4122 UUID v4 fallback for test/legacy browser environments only.
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (token) => {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (token) => {
     const random = Math.floor(Math.random() * 16);
-    const value = token === 'x' ? random : (random & 0x3) | 0x8;
+    const value = token === "x" ? random : (random & 0x3) | 0x8;
     return value.toString(16);
   });
 }
@@ -43,34 +44,62 @@ function createIdempotencyKey(): string {
 function isPostgresUuid(value?: string): value is string {
   return Boolean(
     value &&
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        value,
-      ),
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value,
+    ),
   );
 }
 
-export default function CheckoutPage() {
-  const router = useRouter();
-  const { user, token, loading: authLoading } = useAuth();
-  const { items, voucherCode, isReady, clearCart, isChecking, canCheckout } = useCart();
+const PENDING_CHECKOUT_KEY = "brewlite.pending-vnpay-checkout";
 
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('WALLET');
-  const [mockScenario, setMockScenario] = useState<string>('SUCCESS');
+interface PendingCheckout {
+  orderId: string;
+  idempotencyKey?: string;
+  paymentId?: string;
+}
+
+function readPendingCheckout(): PendingCheckout | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = window.sessionStorage.getItem(PENDING_CHECKOUT_KEY);
+    return stored ? (JSON.parse(stored) as PendingCheckout) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writePendingCheckout(value: PendingCheckout): void {
+  window.sessionStorage.setItem(PENDING_CHECKOUT_KEY, JSON.stringify(value));
+}
+
+export default function CheckoutPage() {
+  const { user, token, loading: authLoading } = useAuth();
+  const { items, voucherCode, isReady, clearCart, isChecking, canCheckout } =
+    useCart();
+
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
-  const [lastPaymentResult, setLastPaymentResult] = useState<PaymentResponse | null>(null);
-  const [confirmedOrderId, setConfirmedOrderId] = useState<string | null>(null);
-  const [paymentAttemptKey, setPaymentAttemptKey] = useState<string | null>(null);
+  const [lastPaymentResult, setLastPaymentResult] =
+    useState<PaymentResponse | null>(null);
+  const [confirmedOrderId, setConfirmedOrderId] = useState<string | null>(
+    () => readPendingCheckout()?.orderId ?? null,
+  );
+  const [paymentAttemptKey, setPaymentAttemptKey] = useState<string | null>(
+    () => readPendingCheckout()?.idempotencyKey ?? null,
+  );
 
-  const summary = useMemo(() => computeCartSummary(items, voucherCode), [items, voucherCode]);
+  const summary = useMemo(
+    () => computeCartSummary(items, voucherCode),
+    [items, voucherCode],
+  );
 
   // Hàm hỗ trợ format hiển thị Size thân thiện (chuyển đổi ID UUID rác thành tên Size)
   const formatSizeLabel = (sizeInput?: string) => {
-    if (!sizeInput) return 'Vừa (M)';
+    if (!sizeInput) return "Vừa (M)";
     // Nếu sizeInput là chuỗi UUID 8-4-4-4-12 (như b0000000-0000...) thì chuyển về nhãn mặc định
     if (/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(sizeInput)) {
-      return 'Vừa (M)';
+      return "Vừa (M)";
     }
     return sizeInput;
   };
@@ -80,7 +109,9 @@ export default function CheckoutPage() {
     return (
       <div className="max-w-[800px] mx-auto px-4 py-16 text-center">
         <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="font-display text-body-md text-on-surface-variant">Đang tải thông tin đặt hàng...</p>
+        <p className="font-display text-body-md text-on-surface-variant">
+          Đang tải thông tin đặt hàng...
+        </p>
       </div>
     );
   }
@@ -96,7 +127,8 @@ export default function CheckoutPage() {
           Yêu cầu đăng nhập để thanh toán
         </h1>
         <p className="text-body-md text-on-surface-variant mb-6">
-          Vui lòng đăng nhập hoặc tạo tài khoản để hoàn tất đơn hàng và tích lũy điểm thưởng.
+          Vui lòng đăng nhập hoặc tạo tài khoản để hoàn tất đơn hàng và tích lũy
+          điểm thưởng.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link
@@ -117,31 +149,38 @@ export default function CheckoutPage() {
   }
 
   // 3. Hiển thị màn hình thành công khi đơn đã PAID
-  if (lastPaymentResult && lastPaymentResult.paymentStatus === 'PAID') {
+  if (lastPaymentResult && lastPaymentResult.paymentStatus === "PAID") {
     return (
       <div className="max-w-[640px] mx-auto px-4 py-16">
         <div className="p-space-lg rounded-2xl bg-surface-container-lowest border border-outline-variant/30 shadow-xl text-center flex flex-col items-center">
           <div className="w-16 h-16 rounded-full bg-secondary text-on-secondary flex items-center justify-center mb-4 shadow-md">
             <CheckCircle2 className="w-10 h-10" />
           </div>
-          <h1 className="font-display text-headline-sm font-bold text-on-surface">Đặt hàng thành công!</h1>
+          <h1 className="font-display text-headline-sm font-bold text-on-surface">
+            Đặt hàng thành công!
+          </h1>
           <p className="text-body-md text-on-surface-variant mt-2">
-            Đơn hàng của bạn đã được thanh toán và chuyển đến quầy pha chế Barista.
+            Đơn hàng của bạn đã được thanh toán và chuyển đến quầy pha chế
+            Barista.
           </p>
 
           <div className="w-full my-6 p-4 rounded-xl bg-surface-container-low text-left space-y-2 border border-outline-variant/20">
             <div className="flex justify-between text-body-sm">
               <span className="text-on-surface-variant">Mã đơn hàng:</span>
-              <span className="font-mono font-bold text-on-surface">{confirmedOrderId}</span>
+              <span className="font-mono font-bold text-on-surface">
+                {confirmedOrderId}
+              </span>
             </div>
             <div className="flex justify-between text-body-sm">
               <span className="text-on-surface-variant">Mã thanh toán:</span>
-              <span className="font-mono text-on-surface-variant">{lastPaymentResult.paymentId}</span>
+              <span className="font-mono text-on-surface-variant">
+                {lastPaymentResult.paymentId}
+              </span>
             </div>
             <div className="flex justify-between text-body-sm">
               <span className="text-on-surface-variant">Phương thức:</span>
               <span className="font-semibold text-on-surface">
-                {lastPaymentResult.method === 'WALLET' ? 'Ví điện tử BrewLite' : 'Thẻ thanh toán'}
+                VNPay Sandbox
               </span>
             </div>
             <div className="flex justify-between text-body-sm">
@@ -152,9 +191,13 @@ export default function CheckoutPage() {
             </div>
             {lastPaymentResult.processedAt && (
               <div className="flex justify-between text-body-sm pt-1 border-t border-outline-variant/20">
-                <span className="text-on-surface-variant">Thời gian xử lý:</span>
                 <span className="text-on-surface-variant">
-                  {new Date(lastPaymentResult.processedAt).toLocaleString('vi-VN')}
+                  Thời gian xử lý:
+                </span>
+                <span className="text-on-surface-variant">
+                  {new Date(lastPaymentResult.processedAt).toLocaleString(
+                    "vi-VN",
+                  )}
                 </span>
               </div>
             )}
@@ -239,10 +282,11 @@ export default function CheckoutPage() {
         const orderRes = await createOrderApi(orderPayload, token);
         currentOrderId = orderRes.id;
         setConfirmedOrderId(currentOrderId);
+        writePendingCheckout({ orderId: currentOrderId });
       }
 
       // BƯỚC 2: Network/UNKNOWN retry dùng lại key; decline xác định dùng key mới.
-      const isDeclinedRetry = lastPaymentResult?.paymentStatus === 'FAILED';
+      const isDeclinedRetry = lastPaymentResult?.paymentStatus === "FAILED";
       let idempotencyKey = paymentAttemptKey;
       if (!idempotencyKey || isDeclinedRetry) {
         idempotencyKey = createIdempotencyKey();
@@ -255,47 +299,60 @@ export default function CheckoutPage() {
       // BƯỚC 3: POST /api/payments (Xử lý thanh toán)
       const paymentRes = await processPaymentApi(
         currentOrderId,
-        paymentMethod,
+        "VNPAY" satisfies PaymentMethod,
         idempotencyKey,
         token,
-        process.env.NODE_ENV !== 'production' ? mockScenario : undefined,
       );
 
       setLastPaymentResult(paymentRes);
 
+      if (paymentRes.checkoutUrl) {
+        writePendingCheckout({
+          orderId: currentOrderId,
+          idempotencyKey,
+          paymentId: paymentRes.paymentId,
+        });
+        window.location.assign(paymentRes.checkoutUrl);
+        return;
+      }
+
       // BƯỚC 4: Xử lý các trạng thái phản hồi theo hợp đồng
-      if (paymentRes.paymentStatus === 'PAID') {
+      if (paymentRes.paymentStatus === "PAID") {
         clearCart();
-      } else if (paymentRes.paymentStatus === 'PROCESSING') {
+        window.sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
+      } else if (paymentRes.paymentStatus === "PROCESSING") {
         setWarningMessage(
-          'Giao dịch đang được xử lý (202 PROCESSING). Đơn hàng đang được giữ trạng thái PENDING. Vui lòng không tạo thêm yêu cầu thanh toán trùng lặp.',
+          "Giao dịch đang được xử lý (202 PROCESSING). Đơn hàng đang được giữ trạng thái PENDING. Vui lòng không tạo thêm yêu cầu thanh toán trùng lặp.",
         );
-      } else if (paymentRes.paymentStatus === 'UNKNOWN') {
+      } else if (paymentRes.paymentStatus === "UNKNOWN") {
         setWarningMessage(
-          'Yêu cầu thanh toán vượt thời gian chờ hoặc trạng thái chưa xác định (202 UNKNOWN/TIMEOUT). Hệ thống đang lưu đơn để đối soát, không tự động trừ tiền lần hai.',
+          "Yêu cầu thanh toán vượt thời gian chờ hoặc trạng thái chưa xác định (202 UNKNOWN/TIMEOUT). Hệ thống đang lưu đơn để đối soát, không tự động trừ tiền lần hai.",
         );
-      } else if (paymentRes.paymentStatus === 'FAILED') {
+      } else if (paymentRes.paymentStatus === "FAILED") {
+        writePendingCheckout({ orderId: currentOrderId });
         setErrorMessage(
-          'Giao dịch bị từ chối bởi cổng thanh toán (PAYMENT_DECLINED). Bạn có thể thử lại bằng phương thức khác.',
+          "Giao dịch bị từ chối bởi cổng thanh toán (PAYMENT_DECLINED). Bạn có thể thử lại bằng phương thức khác.",
         );
       }
     } catch (err: any) {
       if (err instanceof CheckoutApiError) {
         if (err.statusCode === 409) {
           setErrorMessage(
-            'Xung đột tồn kho hoặc đơn hàng (409 Conflict): ' + err.message,
+            "Xung đột tồn kho hoặc đơn hàng (409 Conflict): " + err.message,
           );
-        } else if (err.code === 'MODULE_PENDING_HANDOFF') {
+        } else if (err.code === "MODULE_PENDING_HANDOFF") {
           setWarningMessage(
-            'Lưu ý kỹ thuật: ' +
+            "Lưu ý kỹ thuật: " +
               err.message +
-              ' (Giao diện Checkout đã tích hợp đúng chuẩn API Contract, đang đợi hoàn tất kết nối backend).',
+              " (Giao diện Checkout đã tích hợp đúng chuẩn API Contract, đang đợi hoàn tất kết nối backend).",
           );
         } else {
           setErrorMessage(err.message);
         }
       } else {
-        setErrorMessage(err.message || 'Đã xảy ra lỗi không xác định khi xử lý thanh toán.');
+        setErrorMessage(
+          err.message || "Đã xảy ra lỗi không xác định khi xử lý thanh toán.",
+        );
       }
     } finally {
       setSubmitting(false);
@@ -359,13 +416,15 @@ export default function CheckoutPage() {
             </h2>
             <div className="text-body-sm space-y-1 text-on-surface-variant">
               <p>
-                <strong className="text-on-surface">Khách hàng:</strong> {user.fullName}
+                <strong className="text-on-surface">Khách hàng:</strong>{" "}
+                {user.fullName}
               </p>
               <p>
                 <strong className="text-on-surface">Email:</strong> {user.email}
               </p>
               <p className="text-[12px] text-outline pt-1">
-                * Mã đơn hàng và thông báo trạng thái đơn sẽ được liên kết với tài khoản này.
+                * Mã đơn hàng và thông báo trạng thái đơn sẽ được liên kết với
+                tài khoản này.
               </p>
             </div>
           </div>
@@ -376,79 +435,20 @@ export default function CheckoutPage() {
               Phương thức thanh toán
             </h2>
 
-            <div className="flex flex-col gap-3">
-              <label
-                className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
-                  paymentMethod === 'WALLET'
-                    ? 'border-secondary bg-secondary-container/20 ring-1 ring-secondary'
-                    : 'border-outline-variant/40 hover:bg-surface-container-low'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="paymentMethod"
-                  value="WALLET"
-                  checked={paymentMethod === 'WALLET'}
-                  onChange={() => setPaymentMethod('WALLET')}
-                  className="accent-secondary w-4 h-4"
-                />
-                <div className="w-10 h-10 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center">
-                  <Wallet className="w-5 h-5" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-body-md text-on-surface">Ví điện tử BrewLite (WALLET)</p>
-                  <p className="text-body-sm text-on-surface-variant">Thanh toán nhanh chóng không tốn phí</p>
-                </div>
-              </label>
-
-              <label
-                className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
-                  paymentMethod === 'CARD'
-                    ? 'border-secondary bg-secondary-container/20 ring-1 ring-secondary'
-                    : 'border-outline-variant/40 hover:bg-surface-container-low'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="paymentMethod"
-                  value="CARD"
-                  checked={paymentMethod === 'CARD'}
-                  onChange={() => setPaymentMethod('CARD')}
-                  className="accent-secondary w-4 h-4"
-                />
-                <div className="w-10 h-10 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center">
-                  <CreditCard className="w-5 h-5" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-body-md text-on-surface">Thẻ ngân hàng / Thẻ quốc tế (CARD)</p>
-                  <p className="text-body-sm text-on-surface-variant">Hỗ trợ Visa, Mastercard, Napas</p>
-                </div>
-              </label>
-            </div>
-
-            {/* Mock Scenario Switcher (Chỉ hiển thị môi trường thử nghiệm / dev) */}
-            {process.env.NODE_ENV !== 'production' && (
-              <div className="mt-4 pt-4 border-t border-outline-variant/20">
-                <label
-                  htmlFor="checkout-mock-scenario"
-                  className="block text-[12px] font-semibold text-outline uppercase tracking-wider mb-1"
-                >
-                  Kịch bản thử nghiệm thanh toán (Dev / Contract Test)
-                </label>
-                <select
-                  id="checkout-mock-scenario"
-                  value={mockScenario}
-                  onChange={(e) => setMockScenario(e.target.value)}
-                  className="w-full text-body-sm p-2 rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface"
-                >
-                  <option value="SUCCESS">SUCCESS — 200 PAID (Thành công)</option>
-                  <option value="FAILURE">FAILURE — 402 PAYMENT_DECLINED (Thất bại)</option>
-                  <option value="PROCESSING">PROCESSING — 202 PROCESSING (Đang xử lý)</option>
-                  <option value="TIMEOUT">TIMEOUT — 202 UNKNOWN (Hết thời gian chờ)</option>
-                  <option value="UNKNOWN">UNKNOWN — 202 UNKNOWN (Không rõ trạng thái)</option>
-                </select>
+            <div className="flex items-center gap-3 p-4 rounded-xl border border-secondary bg-secondary-container/20 ring-1 ring-secondary">
+              <div className="w-10 h-10 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center">
+                <CreditCard className="w-5 h-5" />
               </div>
-            )}
+              <div className="flex-1">
+                <p className="font-semibold text-body-md text-on-surface">
+                  VNPay Sandbox
+                </p>
+                <p className="text-body-sm text-on-surface-variant">
+                  Bạn sẽ được chuyển tới cổng VNPay để chọn ngân hàng hoặc quét
+                  QR.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -461,15 +461,24 @@ export default function CheckoutPage() {
 
             <div className="divide-y divide-outline-variant/20 max-h-64 overflow-y-auto pr-1">
               {items.map((line) => (
-                <div key={line.lineId} className="py-2.5 flex justify-between gap-2 text-body-sm">
+                <div
+                  key={line.lineId}
+                  className="py-2.5 flex justify-between gap-2 text-body-sm"
+                >
                   <div className="flex-1">
                     <p className="font-semibold text-on-surface">
-                      {line.name} <span className="text-secondary font-bold">×{line.quantity}</span>
+                      {line.name}{" "}
+                      <span className="text-secondary font-bold">
+                        ×{line.quantity}
+                      </span>
                     </p>
                     <p className="text-[12px] text-on-surface-variant">
                       Size {formatSizeLabel(line.customization?.size)}
-                      {line.customization?.toppingIds && line.customization.toppingIds.length > 0 && ` + ${line.customization.toppingIds.length} topping`}
-                      {line.customization?.note && ` (${line.customization.note})`}
+                      {line.customization?.toppingIds &&
+                        line.customization.toppingIds.length > 0 &&
+                        ` + ${line.customization.toppingIds.length} topping`}
+                      {line.customization?.note &&
+                        ` (${line.customization.note})`}
                     </p>
                   </div>
                   <span className="font-medium text-on-surface shrink-0">
@@ -482,25 +491,33 @@ export default function CheckoutPage() {
             <div className="pt-3 border-t border-outline-variant/30 space-y-2 text-body-sm">
               <div className="flex justify-between text-on-surface-variant">
                 <span>Tạm tính:</span>
-                <span className="font-medium text-on-surface">{formatCurrency(summary.subtotal)}</span>
+                <span className="font-medium text-on-surface">
+                  {formatCurrency(summary.subtotal)}
+                </span>
               </div>
 
               {summary.discount > 0 && (
                 <div className="flex justify-between text-secondary">
                   <span>Giảm giá ({voucherCode}):</span>
-                  <span className="font-semibold">-{formatCurrency(summary.discount)}</span>
+                  <span className="font-semibold">
+                    -{formatCurrency(summary.discount)}
+                  </span>
                 </div>
               )}
 
               <div className="flex justify-between text-on-surface-variant">
                 <span>Phí vận chuyển:</span>
                 <span className="font-medium text-on-surface">
-                  {summary.shipping === 0 ? 'Miễn phí' : formatCurrency(summary.shipping)}
+                  {summary.shipping === 0
+                    ? "Miễn phí"
+                    : formatCurrency(summary.shipping)}
                 </span>
               </div>
 
               <div className="flex justify-between items-baseline pt-2 border-t border-outline-variant/30">
-                <span className="font-bold text-body-md text-on-surface">Tổng cộng:</span>
+                <span className="font-bold text-body-md text-on-surface">
+                  Tổng cộng:
+                </span>
                 <span className="font-display text-headline-sm font-bold text-secondary">
                   {formatCurrency(summary.total)}
                 </span>
@@ -524,7 +541,9 @@ export default function CheckoutPage() {
               ) : (
                 <>
                   <Lock className="w-4 h-4" />
-                  <span>XÁC NHẬN THANH TOÁN ({formatCurrency(summary.total)})</span>
+                  <span>
+                    THANH TOÁN QUA VNPAY ({formatCurrency(summary.total)})
+                  </span>
                 </>
               )}
             </button>
