@@ -1,11 +1,9 @@
 import {
   BadRequestException,
   ForbiddenException,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import {
   Order,
@@ -43,7 +41,6 @@ import {
   OrderCancellationNotAllowedException,
   OrderNotFoundException,
   OrderNumberConflictException,
-  OrderRefundUnavailableException,
   OrderStateConflictException,
   ReservationAlreadyConsumedException,
   ReservationNotFoundException,
@@ -58,17 +55,6 @@ import {
   CustomerOrderResponse,
   mapCustomerOrderResponse,
 } from './orders.types';
-import {
-  PAID_ORDER_REFUND_PORT,
-  PaidOrderRefundPort,
-  PaidOrderRefundResult,
-} from './ports/paid-order-refund.port';
-
-export interface PaidOrderCancellationResult {
-  order: Order;
-  refund: PaidOrderRefundResult;
-  alreadyCancelled: boolean;
-}
 
 @Injectable()
 export class OrdersService {
@@ -77,9 +63,6 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly promotionsService: PromotionsService,
-    @Optional()
-    @Inject(PAID_ORDER_REFUND_PORT)
-    private readonly paidOrderRefund?: PaidOrderRefundPort,
   ) {}
 
   /**
@@ -342,180 +325,6 @@ export class OrdersService {
   }
 
   /**
-   * Barista-only cancellation of a paid order before preparation starts.
-   * Refund, exact inventory restoration, reservation release, order status and
-   * history are committed or rolled back as one Prisma transaction.
-   */
-  async cancelPaidOrderByBarista(
-    orderId: string,
-    actor: { userId?: string; role?: UserRole | string },
-    reason?: string,
-  ): Promise<PaidOrderCancellationResult> {
-    if (actor.role !== UserRole.BARISTA) {
-      throw new OrderActionForbiddenException(
-        actor.role || 'UNKNOWN',
-        OrderStatus.PAID,
-        OrderStatus.CANCELLED,
-      );
-    }
-    if (!actor.userId) {
-      throw new OrderActionForbiddenException(
-        actor.role,
-        OrderStatus.PAID,
-        OrderStatus.CANCELLED,
-      );
-    }
-    if (!this.paidOrderRefund) {
-      throw new OrderRefundUnavailableException();
-    }
-
-    return this.prisma.$transaction(
-      async (tx) =>
-        this.executePaidCancellationTransaction(
-          tx,
-          orderId,
-          actor.userId!,
-          reason,
-        ),
-      { maxWait: 5000, timeout: 10000 },
-    );
-  }
-
-  private async executePaidCancellationTransaction(
-    tx: Prisma.TransactionClient,
-    orderId: string,
-    actorId: string,
-    reason?: string,
-  ): Promise<PaidOrderCancellationResult> {
-    const isUuid =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        orderId,
-      );
-    if (!isUuid) throw new OrderNotFoundException(orderId);
-
-    const actor = await tx.user.findUnique({
-      where: { id: actorId },
-      select: { role: true },
-    });
-    if (actor?.role !== UserRole.BARISTA) {
-      throw new OrderActionForbiddenException(
-        actor?.role || 'UNKNOWN',
-        OrderStatus.PAID,
-        OrderStatus.CANCELLED,
-      );
-    }
-
-    const order = await tx.order.findUnique({
-      where: { id: orderId },
-      include: { reservation: { include: { lines: true } } },
-    });
-    if (!order) throw new OrderNotFoundException(orderId);
-
-    // A replay is successful only when Payments can return the durable refund.
-    if (order.status === OrderStatus.CANCELLED) {
-      const refund = await this.paidOrderRefund!.refundPaidOrderInTransaction(
-        tx,
-        {
-          orderId,
-          actorId,
-          reason,
-        },
-      );
-      return { order, refund, alreadyCancelled: true };
-    }
-
-    if (order.status !== OrderStatus.PAID) {
-      throw new OrderCancellationNotAllowedException(order.id, order.status);
-    }
-    const reservation = order.reservation;
-    if (!reservation) throw new ReservationNotFoundException(order.id);
-    if (reservation.status !== ReservationStatus.CONSUMED) {
-      throw new ReservationStateConflictException(
-        reservation.id,
-        reservation.version,
-      );
-    }
-
-    const refund = await this.paidOrderRefund!.refundPaidOrderInTransaction(
-      tx,
-      {
-        orderId,
-        actorId,
-        reason,
-      },
-    );
-
-    const sortedLines = [...reservation.lines].sort((a, b) =>
-      a.ingredientId.localeCompare(b.ingredientId),
-    );
-    const lockedIngredients = await this.lockIngredients(
-      tx,
-      sortedLines.map((line) => line.ingredientId),
-    );
-
-    for (const line of sortedLines) {
-      const ingredient = lockedIngredients.get(line.ingredientId);
-      if (!ingredient) throw new IngredientNotFoundException(line.ingredientId);
-      const updated = await tx.ingredient.updateMany({
-        where: { id: ingredient.id, version: ingredient.version },
-        data: {
-          stock: ingredient.stock.plus(line.amount),
-          version: { increment: 1 },
-        },
-      });
-      if (updated.count !== 1) {
-        throw new ConcurrentStockConflictException(ingredient.id);
-      }
-    }
-
-    const reservationUpdate = await tx.orderInventoryReservation.updateMany({
-      where: {
-        id: reservation.id,
-        status: ReservationStatus.CONSUMED,
-        version: reservation.version,
-      },
-      data: {
-        status: ReservationStatus.RELEASED,
-        releasedAt: new Date(),
-        version: { increment: 1 },
-      },
-    });
-    if (reservationUpdate.count !== 1) {
-      throw new ReservationStateConflictException(
-        reservation.id,
-        reservation.version,
-      );
-    }
-
-    const orderUpdate = await tx.order.updateMany({
-      where: {
-        id: order.id,
-        status: OrderStatus.PAID,
-        version: order.version,
-      },
-      data: { status: OrderStatus.CANCELLED, version: { increment: 1 } },
-    });
-    if (orderUpdate.count !== 1) {
-      throw new OrderStateConflictException(order.id, order.version);
-    }
-
-    await tx.orderStatusHistory.create({
-      data: {
-        orderId: order.id,
-        fromStatus: OrderStatus.PAID,
-        toStatus: OrderStatus.CANCELLED,
-        actorId,
-        reason: reason || 'Barista cancelled paid order before preparation',
-      },
-    });
-
-    const updatedOrder = await tx.order.findUniqueOrThrow({
-      where: { id: order.id },
-    });
-    return { order: updatedOrder, refund, alreadyCancelled: false };
-  }
-
-  /**
    * Truy vấn hàng đợi đơn hàng phục vụ Barista pha chế (GET /api/barista/orders):
    * - Mặc định chỉ lấy các đơn ở trạng thái: PAID, PREPARING, READY.
    * - Tuyệt đối không lấy: PENDING, PAYMENT_FAILED, CANCELLED, COMPLETED.
@@ -551,7 +360,11 @@ export class OrdersService {
       status: query.status
         ? (query.status as OrderStatus)
         : {
-            in: [OrderStatus.PAID, OrderStatus.PREPARING, OrderStatus.READY],
+            in: [
+              OrderStatus.PAID,
+              OrderStatus.PREPARING,
+              OrderStatus.READY,
+            ],
           },
     };
 
@@ -786,8 +599,7 @@ export class OrdersService {
             data: {
               userId: order.userId,
               points: calculatedPointsEarned,
-              reason:
-                `Tích điểm cho đơn hàng đã thanh toán ${order.orderNumber}`.trim(),
+              reason: `Tích điểm cho đơn hàng đã thanh toán ${order.orderNumber}`.trim(),
             },
           });
         }
@@ -880,8 +692,7 @@ export class OrdersService {
           data: {
             userId: order.userId,
             points: order.pointsRedeemed,
-            reason:
-              `Hoàn lại điểm cho đơn hàng hủy ${order.orderNumber}`.trim(),
+            reason: `Hoàn lại điểm cho đơn hàng hủy ${order.orderNumber}`.trim(),
           },
         });
       }
@@ -975,8 +786,7 @@ export class OrdersService {
             data: {
               userId: order.userId,
               points: calculatedPointsEarned,
-              reason:
-                `Tích điểm cho đơn hàng hoàn tất ${order.orderNumber}`.trim(),
+              reason: `Tích điểm cho đơn hàng hoàn tất ${order.orderNumber}`.trim(),
             },
           });
         }
@@ -1349,8 +1159,8 @@ export class OrdersService {
     });
 
     // 19. Ánh xạ trả về kết quả theo typed client contract
-    const responseItems: CreateOrderItemResponse[] =
-      calculatedPricing.items.map((item) => ({
+    const responseItems: CreateOrderItemResponse[] = calculatedPricing.items.map(
+      (item) => ({
         productId: item.productId,
         productName: item.productName,
         unitPrice: item.unitPrice.toNumber(),
@@ -1358,7 +1168,8 @@ export class OrdersService {
         subtotal: item.subtotal.toNumber(),
         notes: item.notes ?? null,
         options: item.optionsSnapshot,
-      }));
+      }),
+    );
 
     return mapOrderResponse(order, responseItems);
   }
@@ -1371,10 +1182,7 @@ export class OrdersService {
     tx: Prisma.TransactionClient,
     ingredientIds: string[],
   ): Promise<
-    Map<
-      string,
-      { id: string; name: string; stock: Prisma.Decimal; version: number }
-    >
+    Map<string, { id: string; name: string; stock: Prisma.Decimal; version: number }>
   > {
     if (ingredientIds.length === 0) {
       return new Map();
@@ -1384,12 +1192,7 @@ export class OrdersService {
     const sortedIds = [...ingredientIds].sort();
 
     const lockedRows = await tx.$queryRaw<
-      Array<{
-        id: string;
-        name: string;
-        stock: Prisma.Decimal;
-        version: number;
-      }>
+      Array<{ id: string; name: string; stock: Prisma.Decimal; version: number }>
     >`
       SELECT "id", "name", "stock", "version"
       FROM "ingredients"
