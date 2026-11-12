@@ -209,7 +209,7 @@ export class OrdersService {
    * - Kiểm soát concurrency bằng optimistic locking qua trường `version` (guarded update).
    * - Cập nhật vòng đời Reservation: ACTIVE -> CONSUMED hoặc ACTIVE -> RELEASED.
    * - Hoàn kho chính xác theo snapshot lines khi hủy, khóa Ingredient theo thứ tự ID tăng dần chống deadlock.
-   * - Xử lý Loyalty points: hoàn điểm khi CANCELLED, tích điểm khi COMPLETED.
+   * - Xử lý Loyalty points & Promotion usage: hoàn điểm khi CANCELLED, tích điểm & tăng lượt dùng mã ngay khi PAID.
    */
   async transitionOrderStatus(
     orderId: string,
@@ -548,6 +548,8 @@ export class OrdersService {
     );
     const sortedIngredientIds = sortedLines.map((l) => l.ingredientId);
 
+    let calculatedPointsEarned = order.pointsEarned;
+
     // Kịch bản A: Chuyển sang PAID (từ PENDING)
     if (targetStatus === OrderStatus.PAID) {
       if (reservation.status === ReservationStatus.RELEASED) {
@@ -580,6 +582,35 @@ export class OrdersService {
             reservation.version,
           );
         }
+      }
+
+      // Tự động tích điểm Loyalty ngay khi thanh toán thành công (10.000 VNĐ = 1 điểm)
+      if (order.pointsEarned === 0) {
+        const totalAmountNum = order.total.toNumber();
+        calculatedPointsEarned = Math.floor(totalAmountNum / 10000);
+
+        if (calculatedPointsEarned > 0) {
+          await tx.user.update({
+            where: { id: order.userId },
+            data: { loyaltyPoints: { increment: calculatedPointsEarned } },
+          });
+
+          await tx.loyaltyLog.create({
+            data: {
+              userId: order.userId,
+              points: calculatedPointsEarned,
+              reason: `Tích điểm cho đơn hàng đã thanh toán ${order.orderNumber}`.trim(),
+            },
+          });
+        }
+      }
+
+      // Cập nhật lượt sử dụng Promotion ngay khi thanh toán thành công
+      if (order.promotionId) {
+        await tx.promotion.update({
+          where: { id: order.promotionId },
+          data: { usedCount: { increment: 1 } },
+        });
       }
       // Không trừ stock lần hai vì stock đã được trừ khi tạo đơn (lúc PENDING)
     }
@@ -739,10 +770,9 @@ export class OrdersService {
     }
 
     // Kịch bản D: Chuyển sang COMPLETED (Barista giao hàng hoàn tất)
-    // Tự động tích điểm Loyalty (10.000 VNĐ = 1 điểm) và cập nhật lượt dùng Promotion
-    let calculatedPointsEarned = order.pointsEarned;
+    // Chỉ tích điểm dự phòng nếu chưa tích lúc PAID
     if (targetStatus === OrderStatus.COMPLETED) {
-      if (order.pointsEarned === 0) {
+      if (order.pointsEarned === 0 && calculatedPointsEarned === 0) {
         const totalAmountNum = order.total.toNumber();
         calculatedPointsEarned = Math.floor(totalAmountNum / 10000);
 
@@ -760,13 +790,6 @@ export class OrdersService {
             },
           });
         }
-      }
-
-      if (order.promotionId) {
-        await tx.promotion.update({
-          where: { id: order.promotionId },
-          data: { usedCount: { increment: 1 } },
-        });
       }
     }
 
@@ -920,6 +943,7 @@ export class OrdersService {
               orderAmount: rawSubtotal.toNumber(),
             },
             tx,
+            authenticatedUserId,
           );
         voucherDiscount = new Prisma.Decimal(promoResult.discountAmount);
         promotionId = promoResult.promotionId;
@@ -1157,7 +1181,9 @@ export class OrdersService {
   private async lockIngredients(
     tx: Prisma.TransactionClient,
     ingredientIds: string[],
-  ): Promise<Map<string, { id: string; name: string; stock: Prisma.Decimal; version: number }>> {
+  ): Promise<
+    Map<string, { id: string; name: string; stock: Prisma.Decimal; version: number }>
+  > {
     if (ingredientIds.length === 0) {
       return new Map();
     }
