@@ -2,52 +2,93 @@
 !pragma layout smetana
 skinparam shadowing false
 skinparam defaultFontName "Noto Sans"
+skinparam ArrowColor #5D4037
 skinparam node {
   BackgroundColor #FFFDF8
   BorderColor #5D4037
 }
+skinparam database {
+  BackgroundColor #FFFDF8
+  BorderColor #5D4037
+}
+skinparam cloud {
+  BackgroundColor #F5E9DA
+  BorderColor #5D4037
+}
+skinparam artifact {
+  BackgroundColor #FFFFFF
+  BorderColor #5D4037
+}
 
 node "Thiết bị người dùng" as client {
-  artifact "Browser / PWA" as pwa
+  artifact "Browser / PWA\nhttps://brewlite.duckdns.org" as pwa
 }
 
 cloud "Internet" as internet
 
-node "Production Platform\n[CẬP NHẬT TÊN NỀN TẢNG THỰC TẾ]" as prod {
-  node "Web/CDN" as web {
-    artifact "Next.js" as next
+node "DuckDNS" as dns {
+  artifact "A Record\nbrewlite.duckdns.org -> 47.129.101.36" as dnsrec
+}
+
+node "Let's Encrypt" as le {
+  artifact "TLS Certificate\nAuto-renew (certbot.timer)" as cert
+}
+
+node "AWS EC2 Instance (47.129.101.36)\nUbuntu 26.04.1 LTS | SG: 22, 80, 443" as ec2 {
+  node "Nginx Reverse Proxy" as nginx {
+    artifact "Port 80 -> 301 HTTPS\nPort 443 (SSL/TLS)\n/ -> 127.0.0.1:3006\n/api -> 127.0.0.1:3005" as proxy
   }
-  node "Container Runtime" as api {
-    artifact "NestJS API\nGET /health" as nest
+
+  node "Docker Compose (brewlite_swe_project2_default)" as compose_net {
+    node "brewlite-web (:3006)" as web {
+      artifact "Next.js Production\nNEXT_PUBLIC_API_URL=\nhttps://brewlite.duckdns.org/api" as next
+    }
+
+    node "brewlite-api (:3005)" as api {
+      artifact "NestJS API\nGET /api/products" as nest
+    }
+
+    node "brewlite-migration (one-shot)" as mig {
+      artifact "npx prisma migrate deploy\n(image: brewlite-api:latest)" as migrate
+    }
+
+    database "brewlite-postgres (:5432)" as db {
+      artifact "PostgreSQL 16 Alpine\nVolume: brewlite-pgdata" as storage
+    }
   }
-  database "Managed PostgreSQL" as db {
-    artifact "Persistent Volume\nMigrations" as storage
-  }
-  artifact "Central Logs" as logs
-  artifact "Secrets / Env Vars" as secrets
+
+  artifact ".env (Secrets & Config)\nDATABASE_URL, JWT_SECRET,\nCORS_ORIGIN, NEXT_PUBLIC_API_URL" as secrets
+  artifact "Docker Logs\ndocker compose logs (stdout/stderr)" as logs
 }
 
 node "GitHub" as github {
-  artifact "Repository" as repo
-  artifact "GitHub Actions CI/CD" as actions
+  artifact "Repository\ngiakhoi0123/Brewlite_swe_project2" as repo
+  artifact "GitHub Actions CI\npreflight + backend-ci + frontend-ci" as actions
 }
 
-cloud "Container Registry\n[CẬP NHẬT REGISTRY THỰC TẾ]" as registry
-node "Môi trường local" as local {
-  artifact "docker-compose:\nweb + api + postgres" as compose
+node "Môi trường Local / Deploy" as local {
+  artifact "docker-compose.yml\nLocal dev & SSH/SCP deploy" as local_compose
 }
 
 pwa --> internet : HTTPS 443
-internet --> next : HTTPS 443
-next --> nest : HTTPS / REST JSON
-nest --> db : TLS / 5432 (private)
-nest --> logs : stdout / structured log
+pwa ..> dnsrec : DNS lookup (UDP/TCP 53)
+internet --> proxy : HTTPS 443
+cert ..> proxy : TLS cert & ACME HTTP-01 (:80)
+
+proxy --> next : HTTP 127.0.0.1:3006
+proxy --> nest : HTTP 127.0.0.1:3005
+pwa --> proxy : REST JSON + Bearer / Cookie (/api/*)
+
+migrate --> storage : TCP postgres:5432\n(apply migrations)
+nest --> storage : TCP postgres:5432\n(Prisma Client)
+nest --> logs : stdout / stderr
+next --> logs : stdout / stderr
 secrets ..> next
 secrets ..> nest
-repo --> actions : push / PR / tag
-actions --> registry : push image SHA/tag
-registry --> api : pull image
-actions --> prod : deploy + migrate + smoke test
-actions --> nest : GET /health
-repo --> compose : clone / local build
+secrets ..> migrate
+secrets ..> storage
+
+repo --> actions : push / PR (main)
+repo --> local_compose : git pull / clone
+local_compose --> ec2 : SSH/SCP + docker compose up --build -d
 @enduml
