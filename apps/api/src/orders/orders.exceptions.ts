@@ -3,7 +3,6 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { OrderStatus } from '@prisma/client';
 
@@ -61,9 +60,7 @@ export class ProductOptionMismatchException extends BadRequestException {
  */
 export class DuplicateProductOptionException extends BadRequestException {
   constructor(optionId: string) {
-    super(
-      `Tùy chọn với ID "${optionId}" bị trùng lặp trong cùng một món hàng.`,
-    );
+    super(`Tùy chọn với ID "${optionId}" bị trùng lặp trong cùng một món hàng.`);
   }
 }
 
@@ -157,9 +154,7 @@ export class ConcurrentStockConflictException extends ConflictException {
  * 14. Xung đột transaction cơ sở dữ liệu.
  */
 export class TransactionConflictException extends ConflictException {
-  constructor(
-    message = 'Giao dịch cơ sở dữ liệu gặp xung đột cạnh tranh tài nguyên.',
-  ) {
+  constructor(message = 'Giao dịch cơ sở dữ liệu gặp xung đột cạnh tranh tài nguyên.') {
     super(message);
   }
 }
@@ -168,9 +163,7 @@ export class TransactionConflictException extends ConflictException {
  * 15. Không thể tạo order number duy nhất sau khi đã thử lại tối đa.
  */
 export class OrderNumberConflictException extends ConflictException {
-  constructor(
-    message = 'Không thể tạo mã đơn hàng duy nhất sau số lần thử tối đa.',
-  ) {
+  constructor(message = 'Không thể tạo mã đơn hàng duy nhất sau số lần thử tối đa.') {
     super(message);
   }
 }
@@ -257,20 +250,9 @@ export class ReservationStateConflictException extends ConflictException {
  */
 export class OrderCancellationNotAllowedException extends ConflictException {
   constructor(orderId: string, status: OrderStatus) {
-    super({
-      statusCode: 409,
-      error: 'Conflict',
-      code:
-        status === OrderStatus.PREPARING
-          ? 'ORDER_ALREADY_PREPARING'
-          : 'ORDER_CANCELLATION_NOT_ALLOWED',
-      message:
-        status === OrderStatus.PREPARING
-          ? 'Đơn hàng đã bắt đầu pha và không thể hủy.'
-          : `Đơn hàng "${orderId}" đang ở trạng thái "${status}", không được phép hủy.`,
-      orderId,
-      currentStatus: status,
-    });
+    super(
+      `Đơn hàng "${orderId}" đang ở trạng thái "${status}", không được phép hủy.`,
+    );
   }
 }
 
@@ -286,20 +268,5 @@ export class OrderActionForbiddenException extends ForbiddenException {
     super(
       `Vai trò "${role}" không có quyền chuyển trạng thái đơn hàng từ "${from}" sang "${to}".`,
     );
-  }
-}
-
-/**
- * Paid cancellation is fail-closed until Payments supplies the transactional
- * refund port. An order must never be cancelled without a durable refund.
- */
-export class OrderRefundUnavailableException extends ServiceUnavailableException {
-  constructor() {
-    super({
-      statusCode: 503,
-      error: 'Service Unavailable',
-      code: 'ORDER_REFUND_UNAVAILABLE',
-      message: 'Khong the ghi nhan hoan tien cho don hang tai thoi diem nay.',
-    });
   }
 }

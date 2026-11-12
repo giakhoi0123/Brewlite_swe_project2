@@ -14,56 +14,61 @@ skinparam usecase {
 
 actor "Khách hàng" as Customer
 actor "Nhân viên quầy\n/ Barista" as Barista
+actor "Quản lý\n/ Manager" as Manager
 actor "Dịch vụ thanh toán\nmô phỏng" as Gateway
+
+Manager --|> Barista
 
 rectangle "Hệ thống BrewLite" {
   usecase "Xem và tìm kiếm menu\n(FR-01)" as UC_Menu
-
   usecase "Xem chi tiết, chọn\nsize và topping\n(FR-02)" as UC_Detail
-
   usecase "Quản lý giỏ hàng\n(FR-02)" as UC_Cart
+  usecase "Kiểm tra tình trạng\nphục vụ món (FR-01, FR-02)" as UC_Availability
 
   usecase "Đăng ký / đăng nhập\n(FR-03)" as UC_Auth
+  usecase "Quên và đặt lại\nmật khẩu (FR-03)" as UC_Forgot
 
   usecase "Đặt và thanh toán\nđơn hàng (UC-01)" as UC_Checkout
-
   usecase "Tạo đơn PENDING và\nkiểm tra tồn kho\n(FR-04, FR-07)" as UC_Order
-
   usecase "Thanh toán Ví / Thẻ\nvà chống gửi lặp\n(FR-05)" as UC_Payment
-
   usecase "Áp dụng mã giảm giá\n(FR-08)" as UC_Promo
+  usecase "Xem và đổi điểm\nthưởng (FR-09)" as UC_Loyalty
 
   usecase "Xem lịch sử và\ntheo dõi đơn\n(FR-06)" as UC_History
 
   usecase "Xem hàng đợi đơn\nđã thanh toán\n(FR-10)" as UC_Queue
-
   usecase "Cập nhật trạng thái\nđơn hàng\n(FR-10)" as UC_Status
+  usecase "Hủy đơn PAID và\nhoàn tiền (FR-10)" as UC_CancelPaid
 }
 
-' Chức năng chính của khách hàng
+' Chức năng của khách hàng
 Customer -- UC_Menu
 Customer -- UC_Cart
 Customer -- UC_Auth
+Customer -- UC_Forgot
 Customer -- UC_Checkout
 Customer -- UC_History
+Customer -- UC_Loyalty
 
-' Chức năng của nhân viên quầy
+' Chức năng của nhân viên quầy & quản lý
 Barista -- UC_Auth
 Barista -- UC_Queue
 Barista -- UC_Status
+Barista -- UC_CancelPaid
 
 ' Hệ thống thanh toán bên ngoài
 Gateway -- UC_Payment
 
-' Xem chi tiết là hành vi tùy chọn khi xem menu
+' Quan hệ include / extend
 UC_Detail ..> UC_Menu : <<extend>>
+UC_Availability ..> UC_Cart : <<include>>
+UC_Forgot ..> UC_Auth : <<extend>>
 
-' Đặt hàng luôn cần xác thực, tạo đơn và thanh toán
 UC_Checkout ..> UC_Auth : <<include>>
 UC_Checkout ..> UC_Order : <<include>>
 UC_Checkout ..> UC_Payment : <<include>>
 
-' Mã giảm giá chỉ xuất hiện khi khách có sử dụng
 UC_Promo ..> UC_Checkout : <<extend>>
+UC_Loyalty ..> UC_Checkout : <<extend>>
 
 @enduml
