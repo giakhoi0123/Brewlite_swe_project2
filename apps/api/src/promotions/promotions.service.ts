@@ -6,10 +6,11 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ValidatePromotionDto } from './dto/validate-promotion.dto';
 import { CreatePromotionDto } from './dto/create-promotion.dto';
-import { DiscountType, Prisma } from '@prisma/client';
+import { DiscountType, OrderStatus, Prisma } from '@prisma/client';
 
 export type PromotionDatabaseClient =
   | Pick<PrismaService, 'promotion'>
+  | PrismaService
   | Prisma.TransactionClient;
 
 @Injectable()
@@ -35,9 +36,9 @@ export class PromotionsService {
     });
   }
 
-  async findAllActive() {
+  async findAllActive(userId?: string) {
     const now = new Date();
-    return this.prisma.promotion.findMany({
+    const promotions = await this.prisma.promotion.findMany({
       where: {
         isActive: true,
         startDate: { lte: now },
@@ -52,13 +53,50 @@ export class PromotionsService {
         minOrderAmount: true,
         maxDiscount: true,
         endDate: true,
+        usageLimit: true,
+        usedCount: true,
       },
     });
+
+    // 1. Loại bỏ các mã đã hết tổng lượt sử dụng trên toàn hệ thống
+    let availablePromotions = promotions.filter(
+      (promo) =>
+        promo.usageLimit === null || promo.usedCount < promo.usageLimit,
+    );
+
+    // 2. Nếu có userId, ẩn luôn các mã mà khách hàng này đã từng áp dụng
+    if (userId && availablePromotions.length > 0) {
+      const usedOrders = await this.prisma.order.findMany({
+        where: {
+          userId,
+          promotionId: {
+            in: availablePromotions.map((p) => p.id),
+          },
+          status: {
+            notIn: [OrderStatus.CANCELLED, OrderStatus.PAYMENT_FAILED],
+          },
+        },
+        select: { promotionId: true },
+      });
+
+      const usedPromotionIds = new Set(
+        usedOrders
+          .map((o) => o.promotionId)
+          .filter((id): id is string => id !== null),
+      );
+
+      availablePromotions = availablePromotions.filter(
+        (promo) => !usedPromotionIds.has(promo.id),
+      );
+    }
+
+    return availablePromotions.map(({ usageLimit, usedCount, ...rest }) => rest);
   }
 
   async validateAndCalculateDiscount(
     dto: ValidatePromotionDto,
     db: PromotionDatabaseClient = this.prisma,
+    userId?: string,
   ) {
     const code = dto.code.toUpperCase();
     const promotion = await db.promotion.findUnique({
@@ -66,7 +104,9 @@ export class PromotionsService {
     });
 
     if (!promotion || !promotion.isActive) {
-      throw new NotFoundException('Mã khuyến mãi không tồn tại hoặc đã bị vô hiệu hóa');
+      throw new NotFoundException(
+        'Mã khuyến mãi không tồn tại hoặc đã bị vô hiệu hóa',
+      );
     }
 
     // Cộng thêm 1 phút buffer vào now để tránh lệch millisecond/múi giờ khi vừa tạo mã xong
@@ -74,7 +114,9 @@ export class PromotionsService {
     const validFrom = new Date(now.getTime() + 60 * 1000);
 
     if (validFrom < promotion.startDate || now > promotion.endDate) {
-      throw new BadRequestException('Mã khuyến mãi chưa đến hạn hoặc đã hết hạn sử dụng');
+      throw new BadRequestException(
+        'Mã khuyến mãi chưa đến hạn hoặc đã hết hạn sử dụng',
+      );
     }
 
     if (
@@ -82,6 +124,24 @@ export class PromotionsService {
       promotion.usedCount >= promotion.usageLimit
     ) {
       throw new BadRequestException('Mã khuyến mãi đã hết lượt sử dụng');
+    }
+
+    // Chặn 1 khách hàng sử dụng lại mã khuyến mãi đã dùng ở đơn hợp lệ trước đó
+    if (userId && 'order' in db && db.order) {
+      const existingUsage = await db.order.findFirst({
+        where: {
+          userId,
+          promotionId: promotion.id,
+          status: {
+            notIn: [OrderStatus.CANCELLED, OrderStatus.PAYMENT_FAILED],
+          },
+        },
+        select: { id: true },
+      });
+
+      if (existingUsage) {
+        throw new BadRequestException('Bạn đã sử dụng mã khuyến mãi này rồi');
+      }
     }
 
     const orderAmount = dto.orderAmount;

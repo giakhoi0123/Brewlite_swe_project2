@@ -36,7 +36,7 @@ const mockCartItem = {
   unitPrice: 25000,
   quantity: 2,
   customization: {
-    size: 'M' as const,
+    size: 'b0000000-0000-0000-0000-000000000001',
     sugar: '100',
     ice: '100',
     toppingIds: [],
@@ -154,17 +154,17 @@ describe('CheckoutPage', () => {
     await userEvent.click(submitBtn);
 
     await waitFor(() => {
-      // Seed ID (không phải UUID v4) phải được giữ nguyên; size cũ dạng 'M' bị loại khỏi selectedOptions.
       expect(checkoutApi.createOrderApi).toHaveBeenCalledWith(
-        expect.objectContaining({
+        {
           items: [
-            expect.objectContaining({
-              productId: 'a0000000-0000-0000-0000-000000000001',
+            {
+              productId: mockCartItem.productId,
               quantity: 2,
-              selectedOptions: [],
-            }),
+              selectedOptions: [mockCartItem.customization.size],
+            },
           ],
-        }),
+          voucherCode: undefined,
+        },
         'jwt-token-123',
       );
       expect(checkoutApi.processPaymentApi).toHaveBeenCalledWith(
@@ -193,17 +193,29 @@ describe('CheckoutPage', () => {
       createdAt: new Date().toISOString(),
     });
 
-    (checkoutApi.processPaymentApi as jest.Mock).mockResolvedValue({
-      paymentId: 'pay-123',
-      orderId: 'ord-123',
-      method: 'WALLET',
-      amount: 65000,
-      paymentStatus: 'FAILED',
-      orderStatus: 'PAYMENT_FAILED',
-      resultCode: 'PAYMENT_DECLINED',
-      retryable: true,
-      processedAt: null,
-    });
+    (checkoutApi.processPaymentApi as jest.Mock)
+      .mockResolvedValueOnce({
+        paymentId: 'pay-123',
+        orderId: 'ord-123',
+        method: 'WALLET',
+        amount: 65000,
+        paymentStatus: 'FAILED',
+        orderStatus: 'PAYMENT_FAILED',
+        resultCode: 'PAYMENT_DECLINED',
+        retryable: true,
+        processedAt: new Date().toISOString(),
+      })
+      .mockResolvedValueOnce({
+        paymentId: 'pay-456',
+        orderId: 'ord-123',
+        method: 'WALLET',
+        amount: 65000,
+        paymentStatus: 'PAID',
+        orderStatus: 'PAID',
+        resultCode: 'PAYMENT_PAID',
+        retryable: false,
+        processedAt: new Date().toISOString(),
+      });
 
     render(<CheckoutPage />);
 
@@ -215,6 +227,19 @@ describe('CheckoutPage', () => {
     });
 
     expect(mockClearCart).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /Thử thanh toán lại/i })).toBeInTheDocument();
+    const retryButton = screen.getByRole('button', { name: /Thử thanh toán lại/i });
+    await userEvent.click(retryButton);
+
+    await waitFor(() => {
+      expect(checkoutApi.createOrderApi).toHaveBeenCalledTimes(1);
+      expect(checkoutApi.processPaymentApi).toHaveBeenCalledTimes(2);
+      expect(mockClearCart).toHaveBeenCalledTimes(1);
+    });
+    const firstKey = (checkoutApi.processPaymentApi as jest.Mock).mock.calls[0][2];
+    const retryKey = (checkoutApi.processPaymentApi as jest.Mock).mock.calls[1][2];
+    expect((checkoutApi.processPaymentApi as jest.Mock).mock.calls[1][0]).toBe(
+      'ord-123',
+    );
+    expect(retryKey).not.toBe(firstKey);
   });
 });

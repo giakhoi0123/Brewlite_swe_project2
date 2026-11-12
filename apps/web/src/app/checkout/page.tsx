@@ -27,6 +27,28 @@ import {
 } from '../../services/checkout-api';
 import { formatCurrency } from '../../utils/format';
 
+function createIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  // RFC 4122 UUID v4 fallback for test/legacy browser environments only.
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (token) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = token === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
+function isPostgresUuid(value?: string): value is string {
+  return Boolean(
+    value &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        value,
+      ),
+  );
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
   const { user, token, loading: authLoading } = useAuth();
@@ -39,6 +61,7 @@ export default function CheckoutPage() {
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [lastPaymentResult, setLastPaymentResult] = useState<PaymentResponse | null>(null);
   const [confirmedOrderId, setConfirmedOrderId] = useState<string | null>(null);
+  const [paymentAttemptKey, setPaymentAttemptKey] = useState<string | null>(null);
 
   const summary = useMemo(() => computeCartSummary(items, voucherCode), [items, voucherCode]);
 
@@ -189,41 +212,45 @@ export default function CheckoutPage() {
     setErrorMessage(null);
     setWarningMessage(null);
 
-    // Cùng định dạng với POSTGRES_UUID_REGEX ở backend (chấp nhận cả seed ID a000..., b000...).
-    // Không dùng regex UUID v4 vì seed ID của dự án không phải v4.
-    const isPostgresUuid = (str?: string): str is string =>
-      Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
-
     try {
-      // BƯỚC 1: POST /api/orders
-      const orderPayload = {
-        userId: user?.id ?? '',
-        items: items.map((it) => {
-          // Gửi UUID của ProductOption (size + topping). Mã cũ dạng 'M'/'L' bị loại để tránh 400.
-          const optionIds = [it.customization?.size, ...(it.customization?.toppingIds ?? [])].filter(
-            isPostgresUuid,
-          );
-          return {
-            productId: it.productId,
-            productName: it.name,
-            quantity: Number(it.quantity || 1),
-            unitPrice: Number(it.unitPrice || 0),
-            selectedOptions: Array.from(new Set(optionIds)),
-          };
-        }),
-        voucherCode: voucherCode || undefined,
-        paymentMethod: paymentMethod,
-      };
+      // BƯỚC 1: Chỉ tạo Order lần đầu. Retry sau decline phải dùng lại
+      // orderId cũ để OrdersService tái kiểm tra và giữ kho trong transaction.
+      let currentOrderId = confirmedOrderId;
+      if (!currentOrderId) {
+        const orderPayload = {
+          items: items.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            selectedOptions: Array.from(
+              new Set(
+                [
+                  item.customization.size,
+                  ...item.customization.toppingIds,
+                ].filter(isPostgresUuid),
+              ),
+            ),
+            ...(item.customization.note?.trim()
+              ? { notes: item.customization.note.trim() }
+              : {}),
+          })),
+          voucherCode: voucherCode || undefined,
+        };
 
-      const orderRes = await createOrderApi(orderPayload, token);
-      const currentOrderId = orderRes.id;
-      setConfirmedOrderId(currentOrderId);
+        const orderRes = await createOrderApi(orderPayload, token);
+        currentOrderId = orderRes.id;
+        setConfirmedOrderId(currentOrderId);
+      }
 
-      // BƯỚC 2: Sinh Idempotency-Key chuẩn UUID
-      const idempotencyKey =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `idemp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      // BƯỚC 2: Network/UNKNOWN retry dùng lại key; decline xác định dùng key mới.
+      const isDeclinedRetry = lastPaymentResult?.paymentStatus === 'FAILED';
+      let idempotencyKey = paymentAttemptKey;
+      if (!idempotencyKey || isDeclinedRetry) {
+        idempotencyKey = createIdempotencyKey();
+        setPaymentAttemptKey(idempotencyKey);
+      }
+      if (isDeclinedRetry) {
+        setLastPaymentResult(null);
+      }
 
       // BƯỚC 3: POST /api/payments (Xử lý thanh toán)
       const paymentRes = await processPaymentApi(

@@ -4,6 +4,7 @@ import {
   PaymentResultCode,
   PaymentStatus,
   Prisma,
+  ReservationStatus,
 } from "@prisma/client";
 import { PaymentsService } from "./payments.service";
 import { PaymentGatewayPort } from "./ports/payment-gateway.port";
@@ -15,30 +16,53 @@ const RETRY_KEY = "20000000-0000-4000-8000-000000000002";
 const FIXED_TIME = new Date("2026-11-09T12:00:00.000Z");
 
 function createHarness(initialStatus: OrderStatus = OrderStatus.PENDING) {
+  const reservation = {
+    id: "40000000-0000-4000-8000-000000000001",
+    status:
+      initialStatus === OrderStatus.PAYMENT_FAILED
+        ? ReservationStatus.RELEASED
+        : initialStatus === OrderStatus.PAID
+          ? ReservationStatus.CONSUMED
+          : ReservationStatus.ACTIVE,
+  };
   const order = {
     id: ORDER_ID,
     userId: USER_ID,
     total: new Prisma.Decimal(58000),
     status: initialStatus,
+    reservation,
   };
   const payments: any[] = [];
 
   const paymentFindUnique = jest.fn(async ({ where }: any) => {
-    const payment = payments.find(
-      (candidate) => candidate.idempotencyKey === where.idempotencyKey,
+    const payment = payments.find((candidate) =>
+      where.idempotencyKey
+        ? candidate.idempotencyKey === where.idempotencyKey
+        : candidate.id === where.id,
     );
     return payment ? { ...payment, order: { userId: order.userId } } : null;
   });
-  const orderFindUnique = jest.fn(async () => ({ ...order }));
+  const orderFindUnique = jest.fn(async () => ({
+    ...order,
+    reservation: { ...reservation },
+  }));
   const tx = {
     order: {
       findUnique: orderFindUnique,
-      update: jest.fn(async ({ data }: any) => {
-        Object.assign(order, data);
-        return { ...order };
-      }),
     },
     payment: {
+      findFirst: jest.fn(async () =>
+        payments.find(
+          (candidate) =>
+            candidate.orderId === order.id &&
+            [PaymentStatus.PROCESSING, PaymentStatus.UNKNOWN].includes(
+              candidate.status,
+            ),
+        ),
+      ),
+      findUnique: jest.fn(async ({ where }: any) =>
+        payments.find((candidate) => candidate.id === where.id),
+      ),
       create: jest.fn(async ({ data }: any) => {
         const payment = {
           id: `30000000-0000-4000-8000-${String(payments.length + 1).padStart(12, "0")}`,
@@ -62,8 +86,25 @@ function createHarness(initialStatus: OrderStatus = OrderStatus.PENDING) {
       }),
     },
   };
+  const transitionOrderStatusInTransaction = jest.fn(
+    async (_tx: unknown, _orderId: string, targetStatus: OrderStatus) => {
+      order.status = targetStatus;
+      if (targetStatus === OrderStatus.PENDING) {
+        reservation.status = ReservationStatus.ACTIVE;
+      } else if (targetStatus === OrderStatus.PAID) {
+        reservation.status = ReservationStatus.CONSUMED;
+      } else if (targetStatus === OrderStatus.PAYMENT_FAILED) {
+        reservation.status = ReservationStatus.RELEASED;
+      }
+      return { ...order, reservation: { ...reservation } };
+    },
+  );
+  const ordersService = { transitionOrderStatusInTransaction } as any;
   const prisma = {
-    payment: { findUnique: paymentFindUnique },
+    payment: {
+      findUnique: paymentFindUnique,
+      findFirst: tx.payment.findFirst,
+    },
     order: { findUnique: orderFindUnique },
     $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) =>
       callback(tx),
@@ -71,9 +112,17 @@ function createHarness(initialStatus: OrderStatus = OrderStatus.PENDING) {
   } as any;
   const process = jest.fn();
   const gateway: PaymentGatewayPort = { process };
-  const service = new PaymentsService(prisma, gateway);
+  const service = new PaymentsService(prisma, gateway, ordersService);
 
-  return { service, process, order, payments, paymentFindUnique };
+  return {
+    service,
+    process,
+    order,
+    reservation,
+    payments,
+    paymentFindUnique,
+    transitionOrderStatusInTransaction,
+  };
 }
 
 async function expectPaymentError(
@@ -190,7 +239,14 @@ describe("PaymentsService", () => {
   });
 
   it("allows an explicit retry with a new key after a declined payment", async () => {
-    const { service, process, order, payments } = createHarness();
+    const {
+      service,
+      process,
+      order,
+      reservation,
+      payments,
+      transitionOrderStatusInTransaction,
+    } = createHarness();
     process
       .mockResolvedValueOnce({
         paymentStatus: "FAILED",
@@ -213,6 +269,7 @@ describe("PaymentsService", () => {
     );
     expect(declined.httpStatus).toBe(402);
     expect(order.status).toBe(OrderStatus.PAYMENT_FAILED);
+    expect(reservation.status).toBe(ReservationStatus.RELEASED);
 
     const paid = await service.processPayment(
       USER_ID,
@@ -222,7 +279,62 @@ describe("PaymentsService", () => {
     );
     expect(paid.httpStatus).toBe(200);
     expect(order.status).toBe(OrderStatus.PAID);
+    expect(reservation.status).toBe(ReservationStatus.CONSUMED);
     expect(payments).toHaveLength(2);
     expect(process).toHaveBeenCalledTimes(2);
+    expect(transitionOrderStatusInTransaction).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      ORDER_ID,
+      OrderStatus.PENDING,
+      expect.objectContaining({ role: "PAYMENT" }),
+      expect.any(String),
+    );
+  });
+
+  it("persists UNKNOWN and keeps the reservation active when the gateway throws", async () => {
+    const { service, process, order, reservation, payments } = createHarness();
+    process.mockRejectedValue(new Error("gateway timeout"));
+
+    const result = await service.processPayment(
+      USER_ID,
+      FIRST_KEY,
+      { orderId: ORDER_ID, method: "WALLET" },
+      "TIMEOUT",
+    );
+
+    expect(result.httpStatus).toBe(202);
+    expect(result.body.paymentStatus).toBe("UNKNOWN");
+    expect(order.status).toBe(OrderStatus.PENDING);
+    expect(reservation.status).toBe(ReservationStatus.ACTIVE);
+    expect(payments).toHaveLength(1);
+  });
+
+  it("rejects a new key while an unresolved attempt exists", async () => {
+    const { service, process, payments } = createHarness();
+    process.mockResolvedValue({
+      paymentStatus: "PROCESSING",
+      resultCode: "PAYMENT_PROCESSING",
+      retryable: false,
+      processedAt: null,
+    });
+
+    await service.processPayment(
+      USER_ID,
+      FIRST_KEY,
+      { orderId: ORDER_ID, method: "CARD" },
+      "PROCESSING",
+    );
+
+    await expectPaymentError(
+      service.processPayment(USER_ID, RETRY_KEY, {
+        orderId: ORDER_ID,
+        method: "CARD",
+      }),
+      409,
+      "ORDER_NOT_PAYABLE",
+    );
+    expect(payments).toHaveLength(1);
+    expect(process).toHaveBeenCalledTimes(1);
   });
 });

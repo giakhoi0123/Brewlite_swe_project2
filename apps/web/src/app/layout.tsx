@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter, Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '../components/auth/AuthProvider';
 import { CartProvider } from '../components/cart/CartProvider';
@@ -7,14 +6,6 @@ import { FavoritesProvider } from '../components/favorites/FavoritesProvider';
 import { Footer } from '../components/layout/Footer';
 import { Header } from '../components/layout/Header';
 import { ToastProvider } from '../components/ui/ToastProvider';
-
-const inter = Inter({ subsets: ['latin', 'vietnamese'], variable: '--font-inter', display: 'swap' });
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ['latin', 'vietnamese'],
-  weight: ['600', '700'],
-  variable: '--font-jakarta',
-  display: 'swap',
-});
 
 export const metadata: Metadata = {
   title: 'BrewLite — Đặt Cà Phê Trực Tuyến',
@@ -33,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className={`${inter.variable} ${jakarta.variable}`}>
+    <html lang="vi">
       <body className="min-h-screen flex flex-col font-sans text-body-md bg-surface text-on-surface antialiased selection:bg-secondary-fixed selection:text-on-secondary-fixed">
         <ToastProvider>
           <AuthProvider>

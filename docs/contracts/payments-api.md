@@ -8,8 +8,9 @@ of truth for the API implementation, frontend integration and payment tests.
 Traceability: UC-01, FR-03, FR-05, NFR-02, NFR-04 and ADR-004.
 
 The Payments service reads the authoritative total, customer ownership and payable state from
-the persisted Order. Inventory reservation remains owned by the Orders flow; the current Orders
-implementation does not create a second payment-specific reservation to release.
+the persisted Order. Inventory reservation remains owned by the Orders flow. Payments delegates
+every PAID/FAILED/retry transition to the transaction-aware Orders lifecycle so Payment, Order,
+Reservation, stock, Order version and status history are updated atomically.
 
 ## Endpoint and authentication
 
@@ -94,9 +95,11 @@ For `PROCESSING`, `TIMEOUT` and `UNKNOWN`, `processedAt` is `null`.
 
 ## Idempotency and retry rules
 
-Before invoking the mock adapter, the backend reserves the idempotency key and stores a
-fingerprint of the normalized `orderId` and `method`. Database uniqueness is the final guard
-against concurrent duplicate requests.
+Before invoking the mock adapter, transaction A reserves the idempotency key, stores a
+fingerprint of the normalized `orderId` and `method`, persists `Payment=PROCESSING`, and commits.
+The gateway is called only after this commit. Transaction B then applies the gateway result with
+the complete Orders inventory lifecycle. Database uniqueness is the final guard against
+concurrent duplicate requests, including different keys racing for one unresolved Order.
 
 | Request | Required result |
 |---|---|
@@ -142,17 +145,19 @@ Payment response described in the outcome matrix.
 
 ## State transitions and invariants
 
-| Event | Payment | Order |
-|---|---|---|
-| New accepted attempt | `PROCESSING` | `PENDING` |
-| Success | `PAID` | `PAID` |
-| Determinate failure | `FAILED` | `PAYMENT_FAILED` |
-| Timeout/unresolved result | `UNKNOWN` | `PENDING` |
+| Event | Payment | Order | Inventory reservation |
+|---|---|---|---|
+| New accepted attempt | `PROCESSING` | `PENDING` | Existing `ACTIVE` reservation remains held |
+| Success | `PAID` | `PAID` | `ACTIVE -> CONSUMED`; stock is not deducted again |
+| Determinate failure | `FAILED` | `PAYMENT_FAILED` | Stock restored once; `ACTIVE -> RELEASED` |
+| Explicit retry after failure | New `PROCESSING` attempt | `PAYMENT_FAILED -> PENDING` | Stock revalidated/deducted; `RELEASED -> ACTIVE` |
+| Timeout/unresolved result | `UNKNOWN` | `PENDING` | Remains `ACTIVE` for reconciliation |
 
 The implementation must preserve these invariants:
 
 - An order cannot move from `PAID` back to `PENDING` or `PAYMENT_FAILED`.
 - At most one successful Payment may exist for an order.
+- At most one `PROCESSING`/`UNKNOWN` Payment may exist for an order.
 - Replaying a key cannot change its method, order, HTTP status or stored body.
 - The mock scenario header cannot bypass authentication, ownership or payable-state checks.
 - No secret, raw card data or wallet credential is accepted or persisted by this mock API.

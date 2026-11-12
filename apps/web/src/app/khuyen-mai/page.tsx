@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 
 interface Promotion {
   id: string;
   code: string;
   description?: string;
-  discountType: 'PERCENTAGE' | 'FIXED';
+  discountType: 'PERCENTAGE' | 'FIXED' | 'FIXED_AMOUNT';
   discountValue: number;
   minOrderAmount?: number;
   isActive: boolean;
@@ -27,7 +27,7 @@ const REDEEM_OPTIONS = [
 ];
 
 export default function PromotionsAndLoyaltyPage() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [points, setPoints] = useState<number>(0);
   const [myVouchers, setMyVouchers] = useState<MyVoucher[]>([]);
@@ -37,50 +37,70 @@ export default function PromotionsAndLoyaltyPage() {
 
   const activeUserId = user?.id || (user as any)?.userId || (user as any)?.sub;
 
-  // Lấy danh sách Voucher đã đổi từ localStorage
-  useEffect(() => {
-    if (activeUserId) {
-      const saved = localStorage.getItem(`my_vouchers_${activeUserId}`);
-      if (saved) {
-        try {
-          setMyVouchers(JSON.parse(saved));
-        } catch (e) {
-          console.error('Lỗi đọc kho voucher:', e);
-        }
-      }
-    }
-  }, [activeUserId]);
+  const getAuthHeaders = useCallback((): Record<string, string> => {
+    const activeToken =
+      token ||
+      (typeof window !== 'undefined' ? localStorage.getItem('brewlite_access_token') : null);
 
-  const loadData = () => {
-    const fetchPromotions = fetch('http://localhost:3005/api/promotions')
+    return activeToken ? { Authorization: `Bearer ${activeToken}` } : {};
+  }, [token]);
+
+  const loadData = useCallback(() => {
+    const headers = getAuthHeaders();
+
+    const fetchPromotions = fetch('http://localhost:3005/api/promotions', {
+      headers,
+      credentials: 'include',
+    })
       .then((r) => (r.ok ? r.json() : []))
       .catch(() => []);
 
     const fetchLoyalty = activeUserId
-      ? fetch(`http://localhost:3005/api/loyalty/user/${activeUserId}`)
+      ? fetch(`http://localhost:3005/api/loyalty/user/${activeUserId}`, {
+          headers,
+          credentials: 'include',
+        })
           .then(async (r) => (r.ok ? await r.json() : null))
           .catch(() => null)
       : Promise.resolve(null);
 
     Promise.all([fetchPromotions, fetchLoyalty])
       .then(([promoData, loyaltyData]) => {
-        setPromotions(promoData);
+        const publicPromos = Array.isArray(promoData)
+          ? promoData.filter((p: Promotion) => !p.code?.startsWith('REDEEM'))
+          : [];
+        setPromotions(publicPromos);
+
         if (loyaltyData && typeof loyaltyData === 'object') {
           setPoints(loyaltyData.currentPoints ?? loyaltyData.points ?? 0);
+
+          if (Array.isArray(loyaltyData.availableVouchers)) {
+            setMyVouchers(
+              loyaltyData.availableVouchers.map((v: any) => ({
+                code: v.code,
+                name: v.name,
+                redeemedAt: new Date(v.redeemedAt).toLocaleString('vi-VN'),
+              })),
+            );
+          }
         }
+
+        if (activeUserId && typeof window !== 'undefined') {
+          localStorage.removeItem(`my_vouchers_${activeUserId}`);
+        }
+
         setLoading(false);
       })
       .catch((err) => {
         console.error('Lỗi tải dữ liệu:', err);
         setLoading(false);
       });
-  };
+  }, [activeUserId, getAuthHeaders]);
 
   useEffect(() => {
     loadData();
-  }, [user]);
+  }, [loadData]);
 
-  // Xử lý đổi điểm và lưu vào Kho Voucher (Sinh mã độc nhất)
   const handleRedeem = async (pointsToRedeem: number, baseRewardCode: string, rewardName: string) => {
     if (!activeUserId) {
       setMessage({ type: 'error', text: 'Vui lòng đăng nhập để đổi điểm!' });
@@ -92,7 +112,6 @@ export default function PromotionsAndLoyaltyPage() {
       return;
     }
 
-    // Tự động sinh đuôi 4 ký tự ngẫu nhiên (Ví dụ: REDEEM10K-X8K2)
     const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
     const uniqueRewardCode = `${baseRewardCode}-${randomSuffix}`;
 
@@ -102,7 +121,11 @@ export default function PromotionsAndLoyaltyPage() {
     try {
       const res = await fetch('http://localhost:3005/api/loyalty/redeem', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        credentials: 'include',
         body: JSON.stringify({
           userId: activeUserId,
           points: pointsToRedeem,
@@ -115,22 +138,11 @@ export default function PromotionsAndLoyaltyPage() {
         throw new Error(errorData.message || 'Đổi điểm thất bại');
       }
 
-      // Lưu Voucher độc nhất vừa đổi vào Kho Voucher
-      const newVoucher: MyVoucher = {
-        code: uniqueRewardCode,
-        name: rewardName,
-        redeemedAt: new Date().toLocaleString('vi-VN'),
-      };
-      const updatedVouchers = [newVoucher, ...myVouchers];
-      setMyVouchers(updatedVouchers);
-      localStorage.setItem(`my_vouchers_${activeUserId}`, JSON.stringify(updatedVouchers));
-
       setMessage({
         type: 'success',
-        text: `Đổi thành công! Đã thêm mã ${uniqueRewardCode} vào Kho Voucher của bạn. Trừ ${pointsToRedeem} điểm.`,
+        text: `Đổi thành công! Đã thêm mã ${uniqueRewardCode} (${rewardName}) vào Kho Voucher của bạn. Trừ ${pointsToRedeem} điểm.`,
       });
 
-      // Tải lại điểm thưởng sau khi trừ điểm thành công
       loadData();
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Có lỗi xảy ra khi đổi điểm.' });
@@ -153,7 +165,7 @@ export default function PromotionsAndLoyaltyPage() {
       <div className="bg-gradient-to-r from-amber-700 to-amber-900 text-white rounded-xl p-6 shadow-md">
         <h2 className="text-xl font-bold mb-1">Điểm Tích Lũy Loyalty</h2>
         <p className="text-amber-200 text-sm mb-4">
-          Tự động cộng 1 điểm cho mỗi 10.000 VNĐ khi đơn hàng COMPLETED
+          Tự động cộng 1 điểm cho mỗi 10.000 VNĐ khi đơn hàng PAID
         </p>
         <div className="flex items-baseline space-x-2">
           <span className="text-4xl font-extrabold">{points}</span>
@@ -187,9 +199,9 @@ export default function PromotionsAndLoyaltyPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {myVouchers.map((v, index) => (
+            {myVouchers.map((v) => (
               <div
-                key={index}
+                key={v.code}
                 className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-xl p-4 flex justify-between items-center shadow-sm"
               >
                 <div>

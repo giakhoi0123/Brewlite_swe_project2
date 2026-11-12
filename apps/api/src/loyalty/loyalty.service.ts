@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { DiscountType, LoyaltyType, Prisma } from '@prisma/client';
+import { DiscountType, LoyaltyType, OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EarnPointsDto } from './dto/earn-points.dto';
 import { RedeemPointsDto } from './dto/redeem-points.dto';
@@ -12,7 +12,7 @@ export class LoyaltyService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Lấy thông tin điểm tích lũy và lịch sử giao dịch điểm của User
+   * Lấy thông tin điểm tích lũy, lịch sử giao dịch điểm và danh sách voucher đổi điểm còn khả dụng
    */
   async getUserLoyaltyInfo(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -33,11 +33,93 @@ export class LoyaltyService {
       orderBy: { createdAt: 'desc' },
     });
 
+    // Trích xuất các mã REDEEM... từ lịch sử đổi điểm của user
+    const redeemedEntries: Array<{ code: string; redeemedAt: Date }> = [];
+    const seenCodes = new Set<string>();
+
+    for (const log of history) {
+      if (log.type === LoyaltyType.REDEEM && log.reason) {
+        const match = log.reason.match(/(REDEEM[A-Z0-9-]+)/i);
+        if (match) {
+          const code = match[1].toUpperCase();
+          if (!seenCodes.has(code)) {
+            seenCodes.add(code);
+            redeemedEntries.push({ code, redeemedAt: log.createdAt });
+          }
+        }
+      }
+    }
+
+    let availableVouchers: Array<{
+      code: string;
+      name: string;
+      discountValue: number;
+      redeemedAt: Date;
+    }> = [];
+
+    if (redeemedEntries.length > 0) {
+      const codes = redeemedEntries.map((item) => item.code);
+
+      const [promotions, usedOrders] = await Promise.all([
+        this.prisma.promotion.findMany({
+          where: {
+            code: { in: codes },
+            isActive: true,
+          },
+          select: {
+            code: true,
+            discountValue: true,
+            usageLimit: true,
+            usedCount: true,
+          },
+        }),
+        this.prisma.order.findMany({
+          where: {
+            userId,
+            voucherCode: { in: codes },
+            status: {
+              notIn: [OrderStatus.CANCELLED, OrderStatus.PAYMENT_FAILED],
+            },
+          },
+          select: { voucherCode: true },
+        }),
+      ]);
+
+      const promoMap = new Map(promotions.map((p) => [p.code.toUpperCase(), p]));
+      const usedCodeSet = new Set(
+        usedOrders
+          .map((o) => o.voucherCode?.toUpperCase())
+          .filter((c): c is string => Boolean(c)),
+      );
+
+      availableVouchers = redeemedEntries
+        .filter((entry) => {
+          if (usedCodeSet.has(entry.code)) return false;
+          const promo = promoMap.get(entry.code);
+          if (!promo) return false;
+          if (promo.usageLimit !== null && promo.usedCount >= promo.usageLimit) {
+            return false;
+          }
+          return true;
+        })
+        .map((entry) => {
+          const promo = promoMap.get(entry.code)!;
+          const discountValue = Number(promo.discountValue);
+          return {
+            code: entry.code,
+            name: `Voucher giảm ${discountValue.toLocaleString('vi-VN')} VNĐ`,
+            discountValue,
+            redeemedAt: entry.redeemedAt,
+          };
+        });
+    }
+
     return {
       userId: user.id,
       fullName: user.fullName,
       currentPoints: user.loyaltyPoints,
       history,
+      availableVouchers,
     };
   }
 
@@ -59,7 +141,6 @@ export class LoyaltyService {
     }
 
     try {
-      // 1. Tạo bản ghi giao dịch cộng điểm (EARN)
       const log = await db.loyaltyLog.create({
         data: {
           orderId,
@@ -71,7 +152,6 @@ export class LoyaltyService {
         },
       });
 
-      // 2. Cập nhật tổng điểm của User
       await db.user.update({
         where: { id: userId },
         data: { loyaltyPoints: { increment: pointsToEarn } },
@@ -80,7 +160,6 @@ export class LoyaltyService {
       this.logger.log(`Tích thành công ${pointsToEarn} điểm cho user ${userId} (Order: ${orderId})`);
       return log;
     } catch (error) {
-      // Bắt lỗi Unique Constraint P2002 (Trùng @@unique([orderId, type])) -> Idempotency Hit
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
@@ -171,15 +250,19 @@ export class LoyaltyService {
           where: { code: formattedCode },
           update: {
             isActive: true,
-            discountValue: discountValue,
+            discountValue,
+            usageLimit: 1,
+            usedCount: 0,
           },
           create: {
             code: formattedCode,
             description: `Voucher đổi từ ${dto.points} điểm Loyalty`,
             discountType: DiscountType.FIXED_AMOUNT,
-            discountValue: discountValue,
+            discountValue,
             minOrderAmount: 0,
             isActive: true,
+            usageLimit: 1,
+            usedCount: 0,
             startDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
             endDate: new Date('2027-12-31T23:59:59.000Z'),
           },

@@ -7,19 +7,16 @@ export type PaymentOrderStatus = 'PENDING' | 'PAID' | 'PAYMENT_FAILED';
 // 1. Cập nhật Interface khớp chính xác DTO Backend đòi hỏi
 export interface OrderItemPayload {
   productId: string;
-  productName: string;
   quantity: number;
-  unitPrice: number;
-  /** UUID của ProductOption (size + topping) — backend validate bằng POSTGRES_UUID_REGEX. */
-  selectedOptions?: string[];
+  selectedOptions: string[];
+  notes?: string;
 }
 
 export interface CreateOrderPayload {
-  userId: string;
   items: OrderItemPayload[];
   voucherCode?: string | null;
-  paymentMethod?: PaymentMethod;
   notes?: string;
+  pointsToRedeem?: number;
 }
 
 export interface OrderResponse {
@@ -73,21 +70,22 @@ export async function createOrderApi(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // 2. Ép kiểu chuẩn trước khi truyền đi (xử lý triệt để unitPrice dạng number & UUID string)
+  // Chỉ gửi dữ liệu lựa chọn của khách. Danh tính lấy từ JWT và toàn bộ giá
+  // được backend đọc/tính lại từ PostgreSQL.
   const formattedPayload = {
-    userId: String(payload.userId || ''),
     items: (payload.items || []).map((item) => ({
       productId: String(item.productId),
-      productName: String(item.productName || ''),
       quantity: Number(item.quantity || 1),
-      unitPrice: Number(item.unitPrice || 0),
-      ...(item.selectedOptions && item.selectedOptions.length > 0
-        ? { selectedOptions: item.selectedOptions }
-        : {}),
+      selectedOptions: (item.selectedOptions || []).map(String),
+      ...(item.notes?.trim() ? { notes: item.notes.trim() } : {}),
     })),
-    voucherCode: payload.voucherCode || null,
-    paymentMethod: payload.paymentMethod || 'WALLET',
-    notes: payload.notes || '',
+    ...(payload.voucherCode?.trim()
+      ? { voucherCode: payload.voucherCode.trim() }
+      : {}),
+    ...(payload.notes?.trim() ? { notes: payload.notes.trim() } : {}),
+    ...(payload.pointsToRedeem !== undefined
+      ? { pointsToRedeem: Number(payload.pointsToRedeem) }
+      : {}),
   };
 
   try {
@@ -174,16 +172,15 @@ export async function processPaymentApi(
     const isJson = res.headers.get('content-type')?.includes('application/json');
     const data = isJson ? await res.json() : null;
 
+    // A determinate decline is an accepted and persisted Payment outcome, not
+    // a transport/API failure. Return its body so Checkout can retry the same
+    // Order with a new Idempotency-Key.
+    if (res.status === 402 && data) {
+      return data as PaymentResponse;
+    }
+
     if (!res.ok) {
       const errorMsg = Array.isArray(data?.message) ? data.message.join(', ') : data?.message;
-      if (res.status === 402) {
-        throw new CheckoutApiError(
-          errorMsg || 'Giao dịch thanh toán bị từ chối.',
-          402,
-          'PAYMENT_DECLINED',
-          data?.retryable ?? true,
-        );
-      }
       if (res.status === 409) {
         throw new CheckoutApiError(
           errorMsg || 'Xung đột khóa giao dịch (Idempotency Key Conflict) hoặc đơn đã thanh toán.',
