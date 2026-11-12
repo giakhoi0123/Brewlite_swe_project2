@@ -12,7 +12,6 @@ const NAV_LINKS = [
   { href: '/products', label: 'Thực đơn' },
   { href: '/khuyen-mai', label: 'Khuyến mãi' },
   { href: '/lich-su-don-hang', label: 'Lịch sử' },
-  { href: '/ve-chung-toi', label: 'Về chúng tôi' },
 ];
 
 export const Header: React.FC = () => {

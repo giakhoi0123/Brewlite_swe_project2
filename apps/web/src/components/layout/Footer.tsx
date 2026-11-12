@@ -93,15 +93,15 @@ export const Footer: React.FC = () => (
       <div className="pt-space-lg flex flex-col md:flex-row items-center justify-between gap-space-md text-body-sm text-outline">
         <p>© 2026 BrewLite Artisanal Coffee Roastery. Tất cả quyền được bảo lưu.</p>
         <div className="flex items-center gap-space-md">
-          <Link href="/ve-chung-toi" className="hover:text-on-surface transition-colors">
+          <span className="hover:text-on-surface transition-colors cursor-pointer">
             Chính sách bảo mật
-          </Link>
-          <Link href="/ve-chung-toi" className="hover:text-on-surface transition-colors">
+          </span>
+          <span className="hover:text-on-surface transition-colors cursor-pointer">
             Điều khoản phục vụ
-          </Link>
-          <Link href="/ve-chung-toi" className="hover:text-on-surface transition-colors">
+          </span>
+          <span className="hover:text-on-surface transition-colors cursor-pointer">
             Liên hệ hợp tác
-          </Link>
+          </span>
         </div>
       </div>
     </div>
