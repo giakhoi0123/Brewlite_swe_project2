@@ -93,8 +93,18 @@ cp .env.example .env
 | `JWT_SECRET` | *(chuỗi bí mật)* | Khóa bí mật ký và giải mã JWT access token |
 | `JWT_EXPIRES_IN` | `1d` | Thời hạn hiệu lực của access token (1 ngày) |
 | `CORS_ORIGIN` | `http://localhost:3006` | Danh sách tên miền frontend được phép gọi API (CORS whitelist) |
+| `VNPAY_TMN_CODE` | *(do VNPay Sandbox cấp)* | Mã website/merchant dùng để tạo và xác thực giao dịch Sandbox |
+| `VNPAY_HASH_SECRET` | *(bí mật do VNPay Sandbox cấp)* | Khóa HMAC-SHA512, chỉ cấu hình ở backend và không commit |
+| `VNPAY_PAYMENT_URL` | `https://sandbox.vnpayment.vn/paymentv2/vpcpay.html` | Cổng thanh toán VNPay Sandbox |
+| `VNPAY_RETURN_URL` | `http://localhost:3005/api/payments/vnpay-return` | URL VNPay chuyển trình duyệt về sau thanh toán |
+| `VNPAY_IPN_URL` | `http://localhost:3005/api/payments/vnpay-ipn` | URL server-to-server cần đăng ký trong cấu hình merchant VNPay |
+| `VNPAY_FRONTEND_RETURN_URL` | `http://localhost:3006/checkout/vnpay-return` | Trang hiển thị và polling kết quả sau Return URL |
 | `WEB_PORT` | `3006` | Cổng dịch vụ Next.js Frontend Web trên máy host |
 | `NEXT_PUBLIC_API_URL`| `http://localhost:3005/api` | Địa chỉ Backend API được Client-side browser gọi trực tiếp |
+
+Đăng ký bộ khóa thử nghiệm tại cổng VNPay Sandbox rồi điền `VNPAY_TMN_CODE` và
+`VNPAY_HASH_SECRET` vào `.env`. IPN phải là URL HTTPS công khai để máy chủ VNPay truy cập được;
+khi chạy local, dùng tunnel HTTPS hoặc URL API đã deploy và đăng ký đúng URL đó với VNPay.
 
 ### 4. Lệnh một bước khởi chạy (Single-command Startup)
 Từ thư mục gốc của repository, thực hiện:
