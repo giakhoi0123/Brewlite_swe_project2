@@ -90,7 +90,12 @@ export class PromotionsService {
       );
     }
 
-    return availablePromotions.map(({ usageLimit, usedCount, ...rest }) => rest);
+    return availablePromotions.map((promotion) => {
+      const responsePromotion = { ...promotion };
+      Reflect.deleteProperty(responsePromotion, 'usageLimit');
+      Reflect.deleteProperty(responsePromotion, 'usedCount');
+      return responsePromotion;
+    });
   }
 
   async validateAndCalculateDiscount(
