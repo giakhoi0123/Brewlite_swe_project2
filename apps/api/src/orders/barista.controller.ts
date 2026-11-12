@@ -1,6 +1,5 @@
 import {
   Controller,
-  Body,
   Get,
   HttpCode,
   HttpStatus,
@@ -16,7 +15,6 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { BaristaQueueQueryDto } from './dto/barista-queue-query.dto';
-import { CancelBaristaOrderDto } from './dto/cancel-barista-order.dto';
 import { OrdersService } from './orders.service';
 import {
   AuthenticatedUserPayload,
@@ -99,37 +97,5 @@ export class BaristaController {
   ): Promise<BaristaOrderResponse> {
     const actor = extractAuthenticatedActor(request.user);
     return this.ordersService.completeBaristaOrder(id, actor);
-  }
-
-  /**
-   * Barista confirms cancellation of a paid order before preparation starts.
-   * Identity and role always come from the authenticated JWT session.
-   */
-  @Post(':orderId/cancel')
-  @Roles(UserRole.BARISTA)
-  @HttpCode(HttpStatus.OK)
-  async cancelPaidOrder(
-    @Param('orderId') orderId: string,
-    @Body() dto: CancelBaristaOrderDto,
-    @Req() request: AuthenticatedRequest,
-  ) {
-    const actor = extractAuthenticatedActor(request.user);
-    const result = await this.ordersService.cancelPaidOrderByBarista(
-      orderId,
-      actor,
-      dto.reason,
-    );
-
-    return {
-      orderId: result.order.id,
-      status: result.order.status,
-      refund: {
-        refundId: result.refund.refundId,
-        paymentId: result.refund.paymentId,
-        amount: Number(result.refund.amount),
-        status: result.refund.status,
-      },
-      alreadyCancelled: result.alreadyCancelled,
-    };
   }
 }
