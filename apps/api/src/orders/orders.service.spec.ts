@@ -828,6 +828,7 @@ describe('OrdersService & Pure Helpers Unit Tests (Task 5.1 - Lê Quang Điệp)
           orderAmount: 30000,
         },
         txMock,
+        mockUserId,
       );
     });
   });
