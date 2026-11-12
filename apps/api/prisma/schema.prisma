@@ -53,8 +53,7 @@ enum OrderStatus {
 }
 
 enum PaymentMethod {
-  WALLET
-  CARD
+  VNPAY
 }
 
 enum PaymentStatus {
@@ -330,6 +329,11 @@ model Payment {
   resultCode         PaymentResultCode @default(PAYMENT_PROCESSING) @map("result_code")
   retryable          Boolean           @default(false)
   httpStatus         Int               @default(202) @map("http_status")
+  providerTxnRef     String?           @unique @map("provider_txn_ref") @db.VarChar(100)
+  providerTxnDate    String?           @map("provider_txn_date") @db.VarChar(14)
+  gatewayTxnNo       String?           @map("gateway_txn_no") @db.VarChar(255)
+  checkoutUrl        String?           @map("checkout_url") @db.Text
+  expiresAt          DateTime?         @map("expires_at")
   processedAt        DateTime?         @map("processed_at")
   createdAt          DateTime          @default(now()) @map("created_at")
   updatedAt          DateTime          @updatedAt @map("updated_at")
