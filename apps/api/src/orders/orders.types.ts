@@ -151,6 +151,7 @@ export interface BaristaOrderResponse {
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
+  paidAt?: string | null;
   customer?: BaristaQueueCustomer | null;
   items: BaristaQueueItem[];
 }

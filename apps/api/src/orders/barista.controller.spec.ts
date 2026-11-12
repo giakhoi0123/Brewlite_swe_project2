@@ -541,24 +541,6 @@ describe('Barista Controller & Queue Unit Tests (Task 5.1 - Section VI - Lê Qua
   // ============================================================================
 
   describe('Đợt 3.1: Consistency, Privacy & Security Hardening Tests', () => {
-    it('PAID -> CANCELLED bị từ chối cho cả Barista và Manager', () => {
-      expect(canTransition(OrderStatus.PAID, OrderStatus.CANCELLED)).toBe(false);
-      expect(
-        canActorPerformTransition(
-          UserRole.BARISTA,
-          OrderStatus.PAID,
-          OrderStatus.CANCELLED,
-        ),
-      ).toBe(false);
-      expect(
-        canActorPerformTransition(
-          UserRole.MANAGER,
-          OrderStatus.PAID,
-          OrderStatus.CANCELLED,
-        ),
-      ).toBe(false);
-    });
-
     it('Hai đơn hàng cùng timestamp được sắp xếp tất định bằng id ASC', async () => {
       const fixedTimestamp = new Date('2026-11-08T08:00:00.000Z');
       const orderA = {

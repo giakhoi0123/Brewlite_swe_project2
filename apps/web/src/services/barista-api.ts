@@ -1,6 +1,6 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3005/api';
 
-export type BaristaOrderStatus = 'PAID' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED';
+export type BaristaOrderStatus = 'PAID' | 'PREPARING' | 'READY' | 'COMPLETED';
 
 export interface BaristaOrderItem {
   id?: string;
@@ -17,6 +17,7 @@ export interface BaristaOrder {
   status: BaristaOrderStatus;
   total: number;
   createdAt: string;
+  paidAt?: string | null;
   customerName?: string;
   items: BaristaOrderItem[];
 }
@@ -77,6 +78,7 @@ export async function fetchBaristaOrdersApi(token?: string | null): Promise<Bari
       status: o.status,
       total: Number(o.total || 0),
       createdAt: o.createdAt,
+      paidAt: o.paidAt ?? null,
       customerName: o.customer?.fullName || o.customerName || 'Khách hàng',
       items: (o.items || []).map((it: any) => ({
         id: it.id,
@@ -159,6 +161,7 @@ export async function transitionOrderStatusApi(
       status: data.status || nextStatus,
       total: Number(data.total || 0),
       createdAt: data.createdAt,
+      paidAt: data.paidAt ?? null,
       customerName: data.customer?.fullName || 'Khách hàng',
       items: (data.items || []).map((it: any) => ({
         id: it.id,

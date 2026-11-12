@@ -44,6 +44,7 @@ const mockOrders: baristaApi.BaristaOrder[] = [
     status: 'PAID',
     total: 35000,
     createdAt: new Date().toISOString(),
+    paidAt: '2026-11-12T05:24:00.000Z',
     customerName: 'Nguyễn Văn A',
     items: [
       {
@@ -128,6 +129,7 @@ describe('BaristaDashboardPage', () => {
       expect(screen.getByText('Bảng Điều Phối Pha Chế (Barista)')).toBeInTheDocument();
       expect(screen.getByText('#ORD-001')).toBeInTheDocument();
       expect(screen.getByText('Cà phê đen đá')).toBeInTheDocument();
+      expect(screen.getAllByText(/Thanh toán:/).length).toBeGreaterThan(0);
       expect(screen.getByText('#ORD-002')).toBeInTheDocument();
       expect(screen.getByText('Bạc xỉu Sài Gòn')).toBeInTheDocument();
     });

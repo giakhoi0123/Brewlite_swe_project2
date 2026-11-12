@@ -66,6 +66,7 @@ describe('barista-api service', () => {
         orderNumber: 'BL-1001',
         status: 'PAID',
         total: 75000,
+        paidAt: null,
         createdAt: '2026-11-10T10:00:00.000Z',
         customerName: 'Nguyen Van A',
         items: [

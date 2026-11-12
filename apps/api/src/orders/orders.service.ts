@@ -8,6 +8,7 @@ import {
 import {
   Order,
   OrderStatus,
+  PaymentStatus,
   Prisma,
   ReservationStatus,
   UserRole,
@@ -304,8 +305,8 @@ export class OrdersService {
 
   /**
    * Nghiệp vụ hủy đơn hàng (CANCELLED):
-   * - Chỉ cho phép hủy từ các trạng thái hợp lệ (PENDING hoặc PAYMENT_FAILED).
-   * - Từ chối hủy nếu đơn đã ở PAID/PREPARING/READY/COMPLETED hoặc Reservation đã CONSUMED.
+   * - Chỉ cho phép hủy từ PENDING hoặc PAYMENT_FAILED.
+   * - Từ chối hủy nếu đơn đã PAID/PREPARING/READY/COMPLETED.
    * - Hoàn kho nguyên liệu đúng lượng snapshot nếu Reservation đang ACTIVE.
    * - Hoàn trả điểm Loyalty pointsRedeemed về tài khoản khách hàng.
    * - Idempotent: Nếu đơn đã CANCELLED, không hoàn kho hay hoàn điểm lần hai.
@@ -387,6 +388,12 @@ export class OrdersService {
               orderItemOptions: true,
             },
             orderBy: { createdAt: 'asc' },
+          },
+          payments: {
+            where: { status: PaymentStatus.PAID },
+            orderBy: { processedAt: 'desc' },
+            take: 1,
+            select: { processedAt: true },
           },
         },
       }),
@@ -615,17 +622,15 @@ export class OrdersService {
       // Không trừ stock lần hai vì stock đã được trừ khi tạo đơn (lúc PENDING)
     }
 
-    // Kịch bản B: Chuyển sang CANCELLED hoặc PAYMENT_FAILED (từ PENDING hoặc PAYMENT_FAILED)
+    // Kịch bản B: Chuyển sang CANCELLED hoặc PAYMENT_FAILED từ trạng thái chưa thanh toán.
     else if (
       targetStatus === OrderStatus.CANCELLED ||
       targetStatus === OrderStatus.PAYMENT_FAILED
     ) {
-      // Nếu reservation đã bị CONSUMED, từ chối hủy / hoàn kho
       if (reservation.status === ReservationStatus.CONSUMED) {
         throw new ReservationAlreadyConsumedException(order.id);
       }
 
-      // Chỉ thực hiện hoàn kho nếu reservation đang ACTIVE (chưa RELEASED)
       if (reservation.status === ReservationStatus.ACTIVE) {
         // Khóa các nguyên liệu theo thứ tự ID tăng dần chống deadlock
         const lockedIngredients = await this.lockIngredients(

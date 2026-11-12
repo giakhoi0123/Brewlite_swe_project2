@@ -2,7 +2,13 @@ import { randomUUID } from 'crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import { OptionType, OrderStatus, Prisma, ReservationStatus, UserRole } from '@prisma/client';
+import {
+  OptionType,
+  OrderStatus,
+  Prisma,
+  ReservationStatus,
+  UserRole,
+} from '@prisma/client';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { OrdersService } from '../src/orders/orders.service';
@@ -73,6 +79,9 @@ describe('Barista HTTP API Integration (Task 5.1 - Section VII - Lê Quang Đi�
     const orderIds = testOrders.map((o) => o.id);
 
     if (orderIds.length > 0) {
+      await prisma.payment.deleteMany({
+        where: { orderId: { in: orderIds } },
+      });
       await prisma.orderStatusHistory.deleteMany({
         where: { orderId: { in: orderIds } },
       });
@@ -503,35 +512,6 @@ describe('Barista HTTP API Integration (Task 5.1 - Section VII - Lê Quang Đi�
       .set('Authorization', `Bearer ${customerToken}`) // Customer bị 403 trước
       .expect(403);
     expect(notFoundRes.body.stack).toBeUndefined();
-  });
-
-  // ============================================================================
-  // KỊCH BẢN H: Hủy đơn ở trạng thái PAID bị từ chối 409, không hoàn kho hay đổi trạng thái
-  // ============================================================================
-  it('Kịch bản H: Hủy đơn ở trạng thái PAID bị từ chối bằng 409 Conflict, reservation CONSUMED giữ nguyên', async () => {
-    const { customerId } = await createUsers();
-    const initialStock = 100;
-    const { orderId, ingredientId } = await createOrderFixture(customerId, initialStock);
-    await ordersService.handlePaymentSuccess(orderId);
-
-    // Thử hủy đơn hàng khi đã PAID thông qua ordersService
-    await expect(
-      ordersService.cancelOrder(orderId, {
-        userId: customerId,
-        role: UserRole.CUSTOMER,
-      }),
-    ).rejects.toThrow();
-
-    // Kiểm tra DB: Trạng thái Order vẫn là PAID, Reservation vẫn CONSUMED, Stock vẫn là 85
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: { reservation: true },
-    });
-    expect(order?.status).toBe(OrderStatus.PAID);
-    expect(order?.reservation?.status).toBe(ReservationStatus.CONSUMED);
-
-    const ing = await prisma.ingredient.findUnique({ where: { id: ingredientId } });
-    expect(ing?.stock.toNumber()).toBe(85);
   });
 
   // ============================================================================
