@@ -595,7 +595,7 @@ export class OrdersService {
             data: { loyaltyPoints: { increment: calculatedPointsEarned } },
           });
 
-          await tx.loyaltyLog.create({
+          await tx.loyaltyTransaction.create({
             data: {
               userId: order.userId,
               points: calculatedPointsEarned,
@@ -688,7 +688,7 @@ export class OrdersService {
           data: { loyaltyPoints: { increment: order.pointsRedeemed } },
         });
 
-        await tx.loyaltyLog.create({
+        await tx.loyaltyTransaction.create({
           data: {
             userId: order.userId,
             points: order.pointsRedeemed,
@@ -782,7 +782,7 @@ export class OrdersService {
             data: { loyaltyPoints: { increment: calculatedPointsEarned } },
           });
 
-          await tx.loyaltyLog.create({
+          await tx.loyaltyTransaction.create({
             data: {
               userId: order.userId,
               points: calculatedPointsEarned,
@@ -992,7 +992,7 @@ export class OrdersService {
           );
         }
 
-        await tx.loyaltyLog.create({
+        await tx.loyaltyTransaction.create({
           data: {
             userId: authenticatedUserId,
             points: -pointsRedeemed,

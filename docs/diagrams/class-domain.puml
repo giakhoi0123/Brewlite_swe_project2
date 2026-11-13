@@ -13,7 +13,18 @@ class User {
   +UUID id
   +String email
   +String passwordHash
+  +String fullName
   +UserRole role
+  +Int sessionVersion
+  +Int loyaltyPoints
+  +DateTime createdAt
+}
+
+class PasswordResetToken {
+  +UUID id
+  +String tokenHash
+  +DateTime expiresAt
+  +Boolean used
   +DateTime createdAt
 }
 
@@ -50,9 +61,14 @@ class Order {
   +UUID id
   +String orderNumber
   +OrderStatus status
+  +Int version
   +Decimal subtotal
   +Decimal discount
   +Decimal total
+  +String voucherCode
+  +Int pointsEarned
+  +Int pointsRedeemed
+  +String notes
   +DateTime createdAt
 }
 
@@ -61,7 +77,25 @@ class OrderItem {
   +String productNameSnapshot
   +Decimal unitPriceSnapshot
   +Int quantity
-  +String optionsSnapshot
+  +Decimal subtotal
+  +Json optionsSnapshot
+}
+
+class OrderItemOption {
+  +UUID id
+  +String optionNameSnapshot
+  +OptionType optionType
+  +Decimal extraPriceSnapshot
+  +DateTime createdAt
+}
+
+class OrderStatusHistory {
+  +UUID id
+  +OrderStatus fromStatus
+  +OrderStatus toStatus
+  +UUID actorId
+  +String reason
+  +DateTime createdAt
 }
 
 class OrderInventoryReservation {
@@ -80,6 +114,7 @@ class Payment {
   +UUID id
   +PaymentMethod method
   +PaymentStatus status
+  +PaymentResultCode resultCode
   +String idempotencyKey
   +Decimal amount
 }
@@ -87,15 +122,24 @@ class Payment {
 class Promotion {
   +UUID id
   +String code
-  +DiscountType type
-  +Decimal value
-  +DateTime expiresAt
+  +String description
+  +DiscountType discountType
+  +Decimal discountValue
+  +Decimal minOrderAmount
+  +Decimal maxDiscount
+  +Int usageLimit
+  +Int usedCount
+  +Boolean isActive
+  +DateTime startDate
+  +DateTime endDate
 }
 
 class LoyaltyTransaction {
   +UUID id
   +Int points
+  +Decimal amount
   +LoyaltyType type
+  +String reason
   +DateTime createdAt
 }
 
@@ -106,6 +150,7 @@ enum UserRole {
 }
 enum OrderStatus {
   PENDING
+  PROCESSING
   PAID
   PAYMENT_FAILED
   PREPARING
@@ -123,6 +168,12 @@ enum PaymentStatus {
   PAID
   FAILED
   UNKNOWN
+}
+enum PaymentResultCode {
+  PAYMENT_PAID
+  PAYMENT_DECLINED
+  PAYMENT_PROCESSING
+  PAYMENT_STATUS_UNKNOWN
 }
 enum PaymentMethod {
   WALLET
@@ -147,8 +198,12 @@ enum LoyaltyType {
   REVERSE
 }
 
+User "1" -- "0..*" PasswordResetToken : requests
 User "1" -- "0..*" Order : places
 Order "1" *-- "1..*" OrderItem
+OrderItem "1" *-- "0..*" OrderItemOption
+ProductOption "1" -- "0..*" OrderItemOption : snapshot from
+Order "1" *-- "0..*" OrderStatusHistory : tracks
 Order "1" -- "0..*" Payment : processed by
 Product "1" -- "0..*" OrderItem : snapshot from
 Product "1" *-- "0..*" ProductOption
@@ -160,12 +215,16 @@ OrderReservationLine "0..*" -- "1" Ingredient : holds stock
 Order "0..*" -- "0..1" Promotion : applies
 User "1" -- "0..*" LoyaltyTransaction
 Order "0..1" -- "0..*" LoyaltyTransaction
+
 User --> UserRole
 Order --> OrderStatus
+OrderStatusHistory --> OrderStatus
 OrderInventoryReservation --> ReservationStatus
 Payment --> PaymentStatus
+Payment --> PaymentResultCode
 Payment --> PaymentMethod
 ProductOption --> OptionType
+OrderItemOption --> OptionType
 Ingredient --> IngredientUnit
 Promotion --> DiscountType
 LoyaltyTransaction --> LoyaltyType

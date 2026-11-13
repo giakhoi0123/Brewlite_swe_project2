@@ -106,7 +106,7 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     }
 
     if (userIds.length > 0) {
-      await prisma.loyaltyLog.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.loyaltyTransaction.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     }
 
@@ -259,7 +259,7 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
   // ============================================================================
   // IV. KỊCH BẢN A: REDEEM HỢP LỆ
   // ============================================================================
-  it('Kịch bản A: Redeem điểm hợp lệ trừ đúng loyaltyPoints, tạo đúng LoyaltyLog REDEEM và bảo toàn tài chính', async () => {
+  it('Kịch bản A: Redeem điểm hợp lệ trừ đúng loyaltyPoints, tạo đúng LoyaltyTransaction REDEEM và bảo toàn tài chính', async () => {
     const { user, token } = await createTestCustomer(100); // Có 100 điểm
     const { product, option, ingredient } = await createTestProductFixture(1000);
 
@@ -290,8 +290,8 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     const updatedUser = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(updatedUser.loyaltyPoints).toBe(80);
 
-    // 3. Kiểm tra đúng 1 LoyaltyLog REDEEM
-    const logs = await prisma.loyaltyLog.findMany({ where: { userId: user.id } });
+    // 3. Kiểm tra đúng 1 LoyaltyTransaction REDEEM
+    const logs = await prisma.loyaltyTransaction.findMany({ where: { userId: user.id } });
     expect(logs.length).toBe(1);
     expect(logs[0].points).toBe(-20);
 
@@ -323,7 +323,7 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     // Xác minh DB không bị thay đổi
     const userDb = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(userDb.loyaltyPoints).toBe(15);
-    const logs = await prisma.loyaltyLog.findMany({ where: { userId: user.id } });
+    const logs = await prisma.loyaltyTransaction.findMany({ where: { userId: user.id } });
     expect(logs.length).toBe(0);
     const ingDb = await prisma.ingredient.findUniqueOrThrow({ where: { id: ingredient.id } });
     expect(ingDb.stock.toNumber()).toBe(1000);
@@ -332,7 +332,7 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
   // ============================================================================
   // VI. KỊCH BẢN C: ROLLBACK SAU KHI ĐÃ TRỪ ĐIỂM
   // ============================================================================
-  it('Kịch bản C: Thiếu tồn kho nguyên liệu gây rollback toàn bộ, điểm tích lũy và LoyaltyLog được phục hồi nguyên vẹn', async () => {
+  it('Kịch bản C: Thiếu tồn kho nguyên liệu gây rollback toàn bộ, điểm tích lũy và LoyaltyTransaction được phục hồi nguyên vẹn', async () => {
     const { user, token } = await createTestCustomer(100);
     const { product, option, ingredient } = await createTestProductFixture(10); // Chỉ có 10g, trong khi cần 20g
 
@@ -351,8 +351,8 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     const userDb = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(userDb.loyaltyPoints).toBe(100);
 
-    // Không có LoyaltyLog
-    const logs = await prisma.loyaltyLog.findMany({ where: { userId: user.id } });
+    // Không có LoyaltyTransaction
+    const logs = await prisma.loyaltyTransaction.findMany({ where: { userId: user.id } });
     expect(logs.length).toBe(0);
 
     // Không có Order hoặc Reservation mồ côi
@@ -407,8 +407,8 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     const userDb = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(userDb.loyaltyPoints).toBe(20);
 
-    // Chỉ có đúng 1 dòng LoyaltyLog
-    const logs = await prisma.loyaltyLog.findMany({ where: { userId: user.id } });
+    // Chỉ có đúng 1 dòng LoyaltyTransaction
+    const logs = await prisma.loyaltyTransaction.findMany({ where: { userId: user.id } });
     expect(logs.length).toBe(1);
     expect(logs[0].points).toBe(-80);
   });
@@ -515,7 +515,7 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     expect(orderDb.pointsEarned).toBe(4);
 
     // Có đúng 1 log EARN
-    const logs = await prisma.loyaltyLog.findMany({ where: { userId: user.id } });
+    const logs = await prisma.loyaltyTransaction.findMany({ where: { userId: user.id } });
     expect(logs.length).toBe(1);
     expect(logs[0].points).toBe(4);
 
@@ -530,7 +530,7 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     expect(userDb2.loyaltyPoints).toBe(54);
 
     // Vẫn chỉ có 1 log duy nhất
-    const logs2 = await prisma.loyaltyLog.findMany({ where: { userId: user.id } });
+    const logs2 = await prisma.loyaltyTransaction.findMany({ where: { userId: user.id } });
     expect(logs2.length).toBe(1);
   });
 
@@ -567,7 +567,7 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     const userDb = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(userDb.loyaltyPoints).toBe(14);
 
-    const logs = await prisma.loyaltyLog.findMany({ where: { userId: user.id } });
+    const logs = await prisma.loyaltyTransaction.findMany({ where: { userId: user.id } });
     expect(logs.length).toBe(1);
     expect(logs[0].points).toBe(4);
   });
@@ -600,7 +600,7 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     expect(userDb.loyaltyPoints).toBe(100);
 
     // 2. Có đúng 2 log: 1 REDEEM (-30) và 1 REFUND (+30)
-    const logs = await prisma.loyaltyLog.findMany({
+    const logs = await prisma.loyaltyTransaction.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'asc' },
     });
@@ -620,7 +620,7 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     expect(userDb2.loyaltyPoints).toBe(100);
 
     // Vẫn chỉ có 2 log
-    const logs2 = await prisma.loyaltyLog.findMany({ where: { userId: user.id } });
+    const logs2 = await prisma.loyaltyTransaction.findMany({ where: { userId: user.id } });
     expect(logs2.length).toBe(2);
 
     // Tồn kho không bị cộng thêm lần 2
@@ -658,7 +658,7 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     expect(userDb.loyaltyPoints).toBe(100);
 
     // Đúng 1 log refund
-    const refundLogs = await prisma.loyaltyLog.findMany({
+    const refundLogs = await prisma.loyaltyTransaction.findMany({
       where: { userId: user.id, points: 25 },
     });
     expect(refundLogs.length).toBe(1);
@@ -696,7 +696,7 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
       'stock',
       'passwordHash',
       'sessionVersion',
-      'loyaltyLog',
+      'loyaltyTransaction',
     ];
 
     // 1. GET /api/orders/:id của chính chủ

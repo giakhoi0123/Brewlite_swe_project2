@@ -28,7 +28,7 @@ export class LoyaltyService {
       throw new NotFoundException('Không tìm thấy người dùng');
     }
 
-    const history = await this.prisma.loyaltyLog.findMany({
+    const history = await this.prisma.loyaltyTransaction.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
     });
@@ -141,7 +141,7 @@ export class LoyaltyService {
     }
 
     try {
-      const log = await db.loyaltyLog.create({
+      const log = await db.loyaltyTransaction.create({
         data: {
           orderId,
           userId,
@@ -165,7 +165,7 @@ export class LoyaltyService {
         error.code === 'P2002'
       ) {
         this.logger.warn(`[Idempotency Hit] Order ${orderId} đã được cộng điểm trước đó. Bỏ qua.`);
-        return db.loyaltyLog.findUnique({
+        return db.loyaltyTransaction.findUnique({
           where: {
             orderId_type: {
               orderId,
@@ -193,7 +193,7 @@ export class LoyaltyService {
         data: { loyaltyPoints: { increment: dto.points } },
       });
 
-      const log = await tx.loyaltyLog.create({
+      const log = await tx.loyaltyTransaction.create({
         data: {
           userId: dto.userId,
           orderId: dto.orderId || null,
@@ -230,7 +230,7 @@ export class LoyaltyService {
         data: { loyaltyPoints: { decrement: dto.points } },
       });
 
-      const log = await tx.loyaltyLog.create({
+      const log = await tx.loyaltyTransaction.create({
         data: {
           userId: dto.userId,
           points: dto.points,
