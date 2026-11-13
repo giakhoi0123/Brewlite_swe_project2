@@ -10,6 +10,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+*.pem
 
 # Installed dependencies
 node_modules/
