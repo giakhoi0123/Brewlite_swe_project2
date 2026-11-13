@@ -948,7 +948,7 @@ describe('OrdersService & Pure Helpers Unit Tests (Task 5.1 - Lê Quang Điệp)
         loyaltyPoints: userLoyaltyPoints,
       });
       txMock.user.updateMany = jest.fn().mockResolvedValue({ count: 1 });
-      txMock.loyaltyLog = { create: jest.fn().mockResolvedValue({ id: 'log-1' }) };
+      txMock.loyaltyTransaction = { create: jest.fn().mockResolvedValue({ id: 'log-1' }) };
 
       txMock.product.findMany.mockResolvedValue([
         { id: prodId1, name: 'Cà phê đen', basePrice: new Prisma.Decimal(30000), isAvailable: true },
@@ -989,7 +989,7 @@ describe('OrdersService & Pure Helpers Unit Tests (Task 5.1 - Lê Quang Điệp)
       txMock.orderStatusHistory.create.mockResolvedValue({ id: 'hist-1' });
     }
 
-    it('45. Tạo đơn với pointsToRedeem hợp lệ: thực hiện atomic updateMany và ghi loyaltyLog', async () => {
+    it('45. Tạo đơn với pointsToRedeem hợp lệ: thực hiện atomic updateMany và ghi loyaltyTransaction', async () => {
       setupBaseMocks(100);
       const dto: CreateOrderDto = {
         items: [{ productId: prodId1, quantity: 1, selectedOptions: [sizeMId] }],
@@ -1007,7 +1007,7 @@ describe('OrdersService & Pure Helpers Unit Tests (Task 5.1 - Lê Quang Điệp)
           loyaltyPoints: { decrement: 10 },
         },
       });
-      expect(txMock.loyaltyLog.create).toHaveBeenCalledWith({
+      expect(txMock.loyaltyTransaction.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           userId: mockUserId,
           points: -10,

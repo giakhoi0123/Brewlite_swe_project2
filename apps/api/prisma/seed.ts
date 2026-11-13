@@ -522,12 +522,12 @@ export async function main() {
     },
   });
 
-  // Seed initial LoyaltyLog for demo customer
-  await prisma.loyaltyLog.deleteMany({
+  // Seed initial LoyaltyTransaction for demo customer
+  await prisma.loyaltyTransaction.deleteMany({
     where: { userId: customer.id },
   });
 
-  await prisma.loyaltyLog.create({
+  await prisma.loyaltyTransaction.create({
     data: {
       userId: customer.id,
       points: 100,
