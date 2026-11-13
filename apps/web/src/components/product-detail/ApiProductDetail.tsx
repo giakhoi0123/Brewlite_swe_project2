@@ -21,6 +21,9 @@ import { useFavorites } from '../favorites/FavoritesProvider';
 import { useToast } from '../ui/ToastProvider';
 import { ProductGallery } from './ProductGallery';
 
+// Trần số ly cho một món trong một lần đặt, độc lập với tồn kho nguyên liệu.
+const MAX_QUANTITY_PER_ORDER = 99;
+
 export function computeProductBadge({
   isAvailable,
   isSizeSelected,
@@ -156,7 +159,7 @@ function ProductContent({ product }: { product: ProductDetail }) {
   const router = useRouter();
 
   useEffect(() => {
-    // 1. Khi chưa có đúng một SIZE: Không gọi API, reset availability state
+    // 
     if (!customization.size) {
       setAvailabilityResult(null);
       setPreviewAvailability(null);
@@ -169,7 +172,7 @@ function ProductContent({ product }: { product: ProductDetail }) {
     setAvailabilityLoading(true);
     setAvailabilityError(null);
 
-    // Gửi toàn bộ giỏ hàng hiện có + dòng preview hiện tại
+
     const previewItems = [
       ...items,
       {
@@ -221,7 +224,7 @@ function ProductContent({ product }: { product: ProductDetail }) {
     availabilityAttempt,
   ]);
 
-  // Hiệu chỉnh quantity khi availability cập nhật thành công (bảo toàn invariant quantity >= 1)
+
   useEffect(() => {
     if (!previewAvailability) return;
     const stock = previewAvailability.availableQuantity;
@@ -258,18 +261,23 @@ function ProductContent({ product }: { product: ProductDetail }) {
 
   const total = calcUnitPrice(product.basePrice, customization, product.options) * quantity;
 
-  // Số ly tối đa còn đặt thêm được (đã trừ phần các món khác trong giỏ đang dùng chung nguyên liệu).
+
   const maxQuantity =
     previewAvailability && previewAvailability.availableQuantity > 0
-      ? Math.min(99, previewAvailability.availableQuantity)
+      ? Math.min(MAX_QUANTITY_PER_ORDER, previewAvailability.availableQuantity)
       : 1;
+
+  const isLimitedByOrderCap =
+    (previewAvailability?.availableQuantity ?? 0) > MAX_QUANTITY_PER_ORDER;
   const isQuantityLocked =
     !isAvailabilityReady || (previewAvailability?.availableQuantity ?? 0) === 0;
   const isAtMaxQuantity = isAvailabilityReady && !isQuantityLocked && quantity >= maxQuantity;
 
   const notifyOverLimit = () => {
     showToast(
-      `Chỉ còn đủ nguyên liệu cho tối đa ${maxQuantity} ly. Không thể thêm nhiều hơn.`,
+      isLimitedByOrderCap
+        ? `Mỗi lần chỉ đặt được tối đa ${MAX_QUANTITY_PER_ORDER} ly cho một món.`
+        : `Chỉ còn đủ nguyên liệu cho tối đa ${maxQuantity} ly. Không thể thêm nhiều hơn.`,
       'error',
     );
   };
@@ -402,11 +410,10 @@ function ProductContent({ product }: { product: ProductDetail }) {
                       size: customization.size === size.id ? '' : size.id,
                     });
                   }}
-                  className={`rounded-xl px-5 py-3 ${
-                    customization.size === size.id
+                  className={`rounded-xl px-5 py-3 ${customization.size === size.id
                       ? 'bg-primary text-on-primary'
                       : 'bg-surface-container'
-                  }`}
+                    }`}
                 >
                   {size.name} (+{formatCurrency(size.extraPrice)})
                 </button>
@@ -494,9 +501,8 @@ function ProductContent({ product }: { product: ProductDetail }) {
                   }
                   changeQuantity(quantity + 1);
                 }}
-                className={`w-9 h-9 rounded-full bg-surface-container flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
-                  isAtMaxQuantity ? 'opacity-40 cursor-not-allowed' : ''
-                }`}
+                className={`w-9 h-9 rounded-full bg-surface-container flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${isAtMaxQuantity ? 'opacity-40 cursor-not-allowed' : ''
+                  }`}
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -504,7 +510,9 @@ function ProductContent({ product }: { product: ProductDetail }) {
           </div>
           {isAtMaxQuantity && (
             <p id="quantity-max-hint" className="text-secondary text-body-sm text-right">
-              Đã đạt số lượng tối đa ({maxQuantity} ly)
+              {isLimitedByOrderCap
+                ? `Tối đa ${MAX_QUANTITY_PER_ORDER} ly mỗi lần đặt`
+                : `Đã đạt số lượng tối đa (${maxQuantity} ly)`}
             </p>
           )}
         </div>
