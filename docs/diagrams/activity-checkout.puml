@@ -1,4 +1,7 @@
 @startuml
+
+title Activity Diagram - Checkout VNPay
+
 skinparam shadowing false
 skinparam defaultFontName "Noto Sans"
 skinparam activity {
@@ -14,73 +17,139 @@ start
 :Mở giỏ hàng và chọn thanh toán;
 
 |Next.js UI|
-:Hiển thị tóm tắt đơn;
-if (Có JWT hợp lệ?) then (Không)
+if (JWT hợp lệ?) then (Không)
   :Chuyển đến đăng nhập;
   |Khách hàng|
   :Đăng nhập;
   |Next.js UI|
-  :Quay lại checkout;
 endif
-:Gửi POST /orders;
+:Gửi POST /api/orders\n(items, voucherCode, pointsToRedeem, notes);
 
 |NestJS API|
-:Xác thực JWT và validate DTO;
-:Tính lại giá phía server;
+:Xác thực JWT, validate DTO;
+:Đọc sản phẩm/option và tính lại giá;
+:Kiểm tra voucher;
 
 |PostgreSQL|
-:Bắt đầu transaction;
-:Khóa/kiểm tra tồn kho;
-if (Đủ hàng?) then (Không)
-  :Rollback transaction;
+:BEGIN transaction tạo đơn;
+if (pointsToRedeem hợp lệ?) then (Không)
+  :ROLLBACK;
+  |NestJS API|
+  :Trả 400 Bad Request;
+  |Next.js UI|
+  :Thông báo điểm không hợp lệ/không đủ;
+  stop
+else (Có / không sử dụng điểm)
+  :Atomic decrement loyaltyPoints;\nghi LoyaltyLog âm nếu đổi điểm;
+endif
+:Khóa Ingredient theo thứ tự ID;
+if (Đủ tồn kho?) then (Không)
+  :ROLLBACK;
   |NestJS API|
   :Trả 409 Conflict;
   |Next.js UI|
-  :Thông báo hết/thiếu hàng;
+  :Thông báo thiếu nguyên liệu;
   stop
 else (Có)
-  :Giữ tồn kho, lưu Order PENDING\nvà OrderItem snapshot;
-  :Commit transaction;
+  :Trừ tồn kho;
+  :Tạo Order PENDING + OrderItem snapshot\n+ reservation ACTIVE + reservation lines;
+  :COMMIT;
 endif
 
 |Next.js UI|
-:Sinh Idempotency-Key;
-:Gửi POST /payments;
+:Nhận 201 Created + orderId;
 
-|NestJS API|
-:Kiểm tra chủ sở hữu đơn và khóa chống lặp;
-if (Đã xử lý khóa này?) then (Có)
-  :Trả lại kết quả đã lưu;
-else (Chưa)
-  :Lưu Payment PROCESSING;
-  |Payment Service|
-  :Xử lý thanh toán mô phỏng;
-  if (Kết quả?) then (PAID)
-    |NestJS API|
-    :Cập nhật Payment và Order = PAID;
-    |Next.js UI|
-    :Xóa giỏ và hiển thị mã đơn;
-    |Khách hàng|
-    :Theo dõi trạng thái đơn;
-    stop
-  elseif (FAILED)
-    |NestJS API|
-    :Cập nhật PAYMENT_FAILED;
+repeat
+  :Sinh Idempotency-Key mới;
+  :Gửi POST /api/payments\n(orderId, method=VNPAY);
+
+  |NestJS API|
+  :Kiểm tra chủ đơn và Idempotency-Key;
+  if (Key đã tồn tại?) then (Có)
+    :Trả lại đúng kết quả đã lưu;
+  else (Không)
     |PostgreSQL|
-    :Hoàn tồn kho đúng một lần;
-    |Next.js UI|
-    :Thông báo thất bại và cho thử lại;
-    stop
-  else (TIMEOUT/UNKNOWN)
+    :BEGIN Transaction A;
+    if (Order = PAYMENT_FAILED?) then (Có)
+      :Khóa và kiểm tra lại Ingredient;
+      if (Còn đủ tồn kho?) then (Không)
+        :ROLLBACK;
+        |NestJS API|
+        :Trả 409 ORDER_NOT_PAYABLE;
+        |Next.js UI|
+        :Thông báo không thể thanh toán lại;
+        stop
+      else (Có)
+        :Trừ kho; Reservation RELEASED -> ACTIVE;
+        :Order PAYMENT_FAILED -> PENDING;\nghi OrderStatusHistory;
+      endif
+    else (Order = PENDING)
+      :Xác nhận reservation ACTIVE;
+    endif
+    :Tạo Payment PROCESSING;
+    :COMMIT Transaction A;
+
     |NestJS API|
-    :Giữ Order PENDING để đối soát;
+    :Tạo URL VNPay ký HMAC-SHA512;
+    |PostgreSQL|
+    :Lưu providerTxnRef, checkoutUrl, expiresAt;
+    |NestJS API|
+    :Trả HTTP 202 PROCESSING + checkoutUrl;
+
     |Next.js UI|
-    :Thông báo đang xác minh;
+    :Redirect trình duyệt sang VNPay Sandbox;
+    |VNPay Sandbox|
+    :Khách xác thực giao dịch;
+    :Gửi GET /api/payments/vnpay-ipn;
+
+    |NestJS API|
+    :Xác thực checksum, TmnCode, TxnRef và amount;
+    if (Kết quả IPN?) then (Thành công 00/00)
+      |PostgreSQL|
+      :BEGIN Transaction B;
+      :Reservation ACTIVE -> CONSUMED;
+      :Order -> PAID; ghi OrderStatusHistory;
+      :Cộng floor(total / 10.000) loyaltyPoints;\nghi LoyaltyLog nếu chưa cộng;
+      :Tăng Promotion.usedCount nếu đơn có promotion;
+      :Payment -> PAID; lưu transaction no/date;
+      :COMMIT Transaction B;
+    elseif (Thất bại xác định) then (FAILED)
+      |PostgreSQL|
+      :BEGIN Transaction B;
+      :Hoàn nguyên liệu đúng một lần;
+      :Reservation ACTIVE -> RELEASED;
+      :Order -> PAYMENT_FAILED; Payment -> FAILED;
+      :COMMIT Transaction B;
+    else (Chưa xác định)
+      |PostgreSQL|
+      :Payment -> UNKNOWN; Order vẫn PENDING;
+    endif
+
+    |NestJS API|
+    :Trả RspCode cho VNPay;
+    |VNPay Sandbox|
+    :Redirect GET /api/payments/vnpay-return;
+    |NestJS API|
+    :Kiểm tra chữ ký Return và redirect 302 về web;
+    |Next.js UI|
+    :Polling GET /api/payments/:paymentId;
+  endif
+
+  if (Payment = PAID?) then (Có)
+    :Xóa giỏ hàng và hiển thị thành công;
+    stop
+  elseif (Payment = FAILED?) then (Có)
+    :Hiển thị thất bại và cho phép thử lại;
+    |Khách hàng|
+    :Chọn thử thanh toán lại hoặc dừng;
+    |Next.js UI|
+  else (PROCESSING / UNKNOWN)
+    :Giữ màn hình chờ để đối soát;
     stop
   endif
-endif
+repeat while (Khách chọn thử lại?) is (Có)
 
-|Next.js UI|
-:Hiển thị kết quả đã lưu;
+:Hiển thị giao dịch thất bại;
 stop
+
 @enduml

@@ -17,6 +17,7 @@ import {
   PaymentExecutionResult,
   PaymentGatewayResult,
   PaymentOrderStatus,
+  VnpayIpnResponse,
 } from "./domain/payment.types";
 import { paymentError } from "./payment.errors";
 import {
@@ -45,6 +46,7 @@ export class PaymentsService {
     idempotencyKey: string | undefined,
     input: CreatePaymentDto,
     mockScenarioHeader?: string,
+    clientIp?: string,
   ): Promise<PaymentExecutionResult> {
     const normalizedKey = this.validateIdempotencyKey(idempotencyKey);
     const scenario = this.resolveMockScenario(mockScenarioHeader);
@@ -53,6 +55,17 @@ export class PaymentsService {
     const replay = await this.findPaymentWithOwner(normalizedKey);
     if (replay) {
       return await this.resolveReplay(replay, userId, fingerprint);
+    }
+
+    try {
+      this.gateway.assertReady();
+    } catch {
+      throw paymentError(
+        503,
+        "PAYMENT_GATEWAY_UNAVAILABLE",
+        "VNPay Sandbox is not configured or temporarily unavailable.",
+        true,
+      );
     }
 
     let reservedPayment: Payment;
@@ -76,6 +89,7 @@ export class PaymentsService {
     const gatewayResult = await this.invokeGatewaySafely(
       reservedPayment,
       scenario,
+      clientIp,
     );
 
     try {
@@ -219,7 +233,10 @@ export class PaymentsService {
             `Reserved payment ${reservedPayment.id} was not found`,
           );
         }
-        if (current.status !== StoredPaymentStatus.PROCESSING) {
+        if (
+          current.status !== StoredPaymentStatus.PROCESSING &&
+          current.status !== StoredPaymentStatus.UNKNOWN
+        ) {
           return current;
         }
 
@@ -248,6 +265,21 @@ export class PaymentsService {
             resultCode: gatewayResult.resultCode,
             retryable: gatewayResult.retryable,
             httpStatus: this.httpStatusFor(gatewayResult.paymentStatus),
+            ...(gatewayResult.providerTransactionRef
+              ? { providerTxnRef: gatewayResult.providerTransactionRef }
+              : {}),
+            ...(gatewayResult.providerTransactionDate
+              ? { providerTxnDate: gatewayResult.providerTransactionDate }
+              : {}),
+            ...(gatewayResult.gatewayTransactionNo
+              ? { gatewayTxnNo: gatewayResult.gatewayTransactionNo }
+              : {}),
+            ...(gatewayResult.checkoutUrl
+              ? { checkoutUrl: gatewayResult.checkoutUrl }
+              : {}),
+            ...(gatewayResult.expiresAt
+              ? { expiresAt: gatewayResult.expiresAt }
+              : {}),
             processedAt: gatewayResult.processedAt,
           },
         });
@@ -259,13 +291,16 @@ export class PaymentsService {
   private async invokeGatewaySafely(
     payment: Payment,
     scenario?: MockPaymentScenario,
+    clientIp?: string,
   ): Promise<PaymentGatewayResult> {
     try {
       return await this.gateway.process({
+        paymentId: payment.id,
         orderId: payment.orderId,
         idempotencyKey: payment.idempotencyKey,
         method: payment.method,
         amount: Number(payment.amount),
+        ipAddress: clientIp,
         scenario,
       });
     } catch {
@@ -354,7 +389,7 @@ export class PaymentsService {
   private resolveMockScenario(
     header?: string,
   ): MockPaymentScenario | undefined {
-    if (!header || process.env.NODE_ENV === "production") {
+    if (!header || process.env.NODE_ENV !== "test") {
       return undefined;
     }
 
@@ -392,7 +427,10 @@ export class PaymentsService {
     this.assertReplayAccess(payment, userId, fingerprint);
 
     let stored = payment;
-    if (stored.status === StoredPaymentStatus.PROCESSING) {
+    if (
+      stored.status === StoredPaymentStatus.PROCESSING &&
+      !stored.checkoutUrl
+    ) {
       stored = await this.waitForStoredOutcome(stored, userId, fingerprint);
     }
 
@@ -456,6 +494,8 @@ export class PaymentsService {
         resultCode: payment.resultCode,
         retryable: payment.retryable,
         processedAt: payment.processedAt?.toISOString() ?? null,
+        checkoutUrl: payment.checkoutUrl,
+        expiresAt: payment.expiresAt?.toISOString() ?? null,
       },
     };
   }
@@ -477,5 +517,124 @@ export class PaymentsService {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       ["P2002", "P2034"].includes(error.code)
     );
+  }
+
+  async getPaymentStatus(
+    userId: string,
+    paymentId: string,
+  ): Promise<PaymentExecutionResult> {
+    if (!isUUID(paymentId, "4")) {
+      throw paymentError(
+        400,
+        "INVALID_PAYMENT_REQUEST",
+        "Payment id must be a valid UUID v4.",
+      );
+    }
+
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: { order: { select: { userId: true } } },
+    });
+    if (!payment) {
+      throw paymentError(404, "PAYMENT_NOT_FOUND", "Payment was not found.");
+    }
+    if (payment.order.userId !== userId) {
+      throw paymentError(
+        403,
+        "ORDER_ACCESS_DENIED",
+        "The authenticated customer does not own this payment.",
+      );
+    }
+
+    return this.toExecutionResult(payment);
+  }
+
+  async handleVnpayIpn(
+    params: Record<string, string>,
+  ): Promise<VnpayIpnResponse> {
+    const callback = this.gateway.verifyCallback(params);
+    if (!callback.valid || !callback.transactionRef) {
+      return { RspCode: "97", Message: "Invalid checksum" };
+    }
+
+    const payment = await this.prisma.payment.findUnique({
+      where: { providerTxnRef: callback.transactionRef },
+      include: { order: { select: { userId: true } } },
+    });
+    if (!payment) {
+      return { RspCode: "01", Message: "Order not found" };
+    }
+
+    if (callback.amount !== Math.round(Number(payment.amount) * 100)) {
+      return { RspCode: "04", Message: "Invalid amount" };
+    }
+
+    if (
+      payment.status === StoredPaymentStatus.PAID ||
+      payment.status === StoredPaymentStatus.FAILED
+    ) {
+      return { RspCode: "02", Message: "Order already confirmed" };
+    }
+
+    const gatewayResult: PaymentGatewayResult = callback.successful
+      ? {
+          paymentStatus: "PAID",
+          resultCode: "PAYMENT_PAID",
+          retryable: false,
+          processedAt: callback.processedAt,
+          gatewayTransactionNo: callback.gatewayTransactionNo,
+        }
+      : callback.finalFailure
+        ? {
+            paymentStatus: "FAILED",
+            resultCode: "PAYMENT_DECLINED",
+            retryable: true,
+            processedAt: callback.processedAt,
+            gatewayTransactionNo: callback.gatewayTransactionNo,
+          }
+        : {
+            paymentStatus: "UNKNOWN",
+            resultCode: "PAYMENT_STATUS_UNKNOWN",
+            retryable: false,
+            processedAt: null,
+            gatewayTransactionNo: callback.gatewayTransactionNo,
+          };
+
+    try {
+      await this.finalizePaymentAttempt(
+        payment,
+        payment.order.userId,
+        gatewayResult,
+      );
+      return { RspCode: "00", Message: "Confirm success" };
+    } catch (error) {
+      this.logger.error(
+        `Could not apply VNPay IPN for payment ${payment.id}.`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      return { RspCode: "99", Message: "Unknown error" };
+    }
+  }
+
+  async resolveVnpayReturn(params: Record<string, string>): Promise<string> {
+    const callback = this.gateway.verifyCallback(params);
+    const frontendUrl = new URL(
+      process.env.VNPAY_FRONTEND_RETURN_URL ||
+        "http://localhost:3006/checkout/vnpay-return",
+    );
+    frontendUrl.searchParams.set("valid", callback.valid ? "true" : "false");
+    if (callback.responseCode) {
+      frontendUrl.searchParams.set("responseCode", callback.responseCode);
+    }
+
+    if (callback.valid && callback.transactionRef) {
+      const payment = await this.prisma.payment.findUnique({
+        where: { providerTxnRef: callback.transactionRef },
+        select: { id: true },
+      });
+      if (payment) frontendUrl.searchParams.set("paymentId", payment.id);
+    }
+
+    return frontendUrl.toString();
   }
 }

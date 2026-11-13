@@ -172,6 +172,9 @@ export function mapBaristaOrderResponse(order: {
   notes?: string | null;
   createdAt: Date;
   updatedAt: Date;
+  payments?: Array<{
+    processedAt: Date | null;
+  }>;
   user?: {
     id: string;
     fullName: string;
@@ -205,6 +208,7 @@ export function mapBaristaOrderResponse(order: {
     notes: order.notes ?? null,
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
+    paidAt: order.payments?.[0]?.processedAt?.toISOString() ?? null,
     customer: order.user
       ? {
           id: order.user.id,

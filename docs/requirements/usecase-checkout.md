@@ -3,7 +3,7 @@
 ## Actor và trigger
 
 - Actor chính: Khách hàng.
-- Actor hỗ trợ: Dịch vụ thanh toán mô phỏng.
+- Actor hỗ trợ: VNPay Sandbox.
 - Trigger: Khách xác nhận đặt đơn từ giỏ hàng hoặc thử thanh toán lại.
 
 ## Tiền điều kiện
@@ -22,15 +22,15 @@
 ## Luồng chính
 
 1. Kiểm tra JWT và hiển thị checkout.
-2. Khách chọn `WALLET` hoặc `CARD`.
+2. Khách xác nhận thanh toán bằng VNPay Sandbox.
 3. UI khóa nút và gửi giỏ hàng.
 4. Backend tính lại giá và kiểm tra promotion.
 5. Transaction giữ tồn kho, tạo Order `PENDING` và OrderItem snapshot.
 6. UI gửi payment cùng `Idempotency-Key`.
 7. Backend kiểm tra chủ sở hữu và khóa chống lặp, lưu Payment `PROCESSING`.
-8. Gateway trả `PAID`.
-9. Transaction cập nhật Payment/Order thành `PAID`.
-10. UI xóa giỏ, hiển thị mã đơn và cho theo dõi.
+8. Backend tạo URL có chữ ký và chuyển khách sang VNPay Sandbox.
+9. VNPay gọi IPN; backend xác thực checksum, mã giao dịch và số tiền.
+10. Transaction cập nhật Payment/Order thành `PAID`; trang Return đọc trạng thái rồi xóa giỏ.
 
 ## Nhánh bắt buộc
 

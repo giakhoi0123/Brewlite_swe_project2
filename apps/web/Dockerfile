@@ -40,15 +40,13 @@ ENV PORT=3006
 RUN groupadd -g 1001 nodejs && \
     useradd -u 1001 -g nodejs -m -d /home/nextjs nextjs
 
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/next.config.mjs ./next.config.mjs
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/.next ./.next
+COPY --chown=nextjs:nodejs --from=builder /app/package.json ./package.json
+COPY --chown=nextjs:nodejs --from=builder /app/next.config.mjs ./next.config.mjs
+COPY --chown=nextjs:nodejs --from=builder /app/node_modules ./node_modules
+COPY --chown=nextjs:nodejs --from=builder /app/.next ./.next
 
 # Ensure static asset folder exists
-RUN mkdir -p ./public
-
-RUN chown -R nextjs:nodejs /app
+RUN install -d -o nextjs -g nodejs ./public
 
 USER nextjs
 

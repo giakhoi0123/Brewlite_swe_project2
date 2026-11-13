@@ -104,6 +104,10 @@ describe('Orders Lifecycle & State Machine (Unit Tests - Section VI & VIII)', ()
       ingredient: {
         updateMany: jest.fn(),
       },
+      payment: {
+        findFirst: jest.fn(),
+        updateMany: jest.fn(),
+      },
       orderStatusHistory: {
         create: jest.fn().mockResolvedValue({ id: 'history-1' }),
       },
@@ -394,17 +398,8 @@ describe('Orders Lifecycle & State Machine (Unit Tests - Section VI & VIII)', ()
     });
   });
 
-  // 10. Cancel reservation CONSUMED bị từ chối
-  describe('Case 10: Cancel reservation CONSUMED bị từ chối', () => {
-    it('throws OrderCancellationNotAllowedException when attempting to cancel PAID order', async () => {
-      const paidOrder = createMockOrder(OrderStatus.PAID, ReservationStatus.CONSUMED);
-      prismaMock.order.findUnique.mockResolvedValue(paidOrder);
-
-      await expect(service.cancelOrder(mockOrderId)).rejects.toThrow(
-        OrderCancellationNotAllowedException,
-      );
-    });
-
+  // 10. Reservation đã CONSUMED không được hoàn bởi luồng hủy thông thường.
+  describe('Case 10: Reject cancellation after inventory was consumed', () => {
     it('throws ReservationAlreadyConsumedException if reservation is CONSUMED during cancellation', async () => {
       const pendingOrderWithConsumedRes = createMockOrder(
         OrderStatus.PENDING,

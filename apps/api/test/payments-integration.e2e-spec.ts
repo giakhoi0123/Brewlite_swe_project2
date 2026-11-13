@@ -27,11 +27,18 @@ describe("Payments PostgreSQL integration", () => {
   const gatewayProcess = jest.fn((input: PaymentGatewayRequest) =>
     adapter.process(input),
   );
+  const gatewayVerifyCallback = jest.fn((params: Record<string, string>) =>
+    adapter.verifyCallback(params),
+  );
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PAYMENT_GATEWAY)
-      .useValue({ process: gatewayProcess })
+      .useValue({
+        assertReady: () => undefined,
+        process: gatewayProcess,
+        verifyCallback: gatewayVerifyCallback,
+      })
       .compile();
 
     app = module.createNestApplication();
@@ -123,7 +130,7 @@ describe("Payments PostgreSQL integration", () => {
   function paymentRequest(
     orderId: string,
     idempotencyKey: string,
-    method: "WALLET" | "CARD",
+    method: "VNPAY",
     scenario: string,
   ) {
     return request(app.getHttpServer())
@@ -138,7 +145,7 @@ describe("Payments PostgreSQL integration", () => {
     const response = await request(app.getHttpServer())
       .post("/api/payments")
       .set("Idempotency-Key", randomUUID())
-      .send({ orderId: randomUUID(), method: "WALLET" })
+      .send({ orderId: randomUUID(), method: "VNPAY" })
       .expect(401);
 
     expect(response.body).toMatchObject({
@@ -154,8 +161,8 @@ describe("Payments PostgreSQL integration", () => {
     const key = randomUUID();
 
     const [first, second] = await Promise.all([
-      paymentRequest(order.id, key, "WALLET", "SUCCESS").expect(200),
-      paymentRequest(order.id, key, "WALLET", "SUCCESS").expect(200),
+      paymentRequest(order.id, key, "VNPAY", "SUCCESS").expect(200),
+      paymentRequest(order.id, key, "VNPAY", "SUCCESS").expect(200),
     ]);
 
     expect(second.body).toEqual(first.body);
@@ -202,7 +209,7 @@ describe("Payments PostgreSQL integration", () => {
     const declined = await paymentRequest(
       order.id,
       randomUUID(),
-      "CARD",
+      "VNPAY",
       "FAILURE",
     ).expect(402);
     expect(declined.body).toMatchObject({
@@ -234,7 +241,7 @@ describe("Payments PostgreSQL integration", () => {
     const paid = await paymentRequest(
       order.id,
       randomUUID(),
-      "CARD",
+      "VNPAY",
       "SUCCESS",
     ).expect(200);
     expect(paid.body).toMatchObject({
@@ -284,7 +291,7 @@ describe("Payments PostgreSQL integration", () => {
     const unknown = await paymentRequest(
       order.id,
       firstKey,
-      "WALLET",
+      "VNPAY",
       "TIMEOUT",
     ).expect(202);
     expect(unknown.body).toMatchObject({
@@ -297,7 +304,7 @@ describe("Payments PostgreSQL integration", () => {
     const blocked = await paymentRequest(
       order.id,
       randomUUID(),
-      "WALLET",
+      "VNPAY",
       "SUCCESS",
     ).expect(409);
     expect(blocked.body).toMatchObject({ code: "ORDER_NOT_PAYABLE" });

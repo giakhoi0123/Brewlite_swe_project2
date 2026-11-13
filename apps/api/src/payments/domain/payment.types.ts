@@ -1,4 +1,4 @@
-export const PAYMENT_METHODS = ["WALLET", "CARD"] as const;
+export const PAYMENT_METHODS = ["VNPAY"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 export const PAYMENT_STATUSES = [
@@ -34,10 +34,12 @@ export const MOCK_PAYMENT_SCENARIOS = [
 export type MockPaymentScenario = (typeof MOCK_PAYMENT_SCENARIOS)[number];
 
 export interface PaymentGatewayRequest {
+  paymentId: string;
   orderId: string;
   idempotencyKey: string;
   method: PaymentMethod;
   amount: number;
+  ipAddress?: string;
   scenario?: MockPaymentScenario;
 }
 
@@ -46,6 +48,23 @@ export interface PaymentGatewayResult {
   resultCode: PaymentResultCode;
   retryable: boolean;
   processedAt: Date | null;
+  providerTransactionRef?: string;
+  providerTransactionDate?: string;
+  gatewayTransactionNo?: string;
+  checkoutUrl?: string;
+  expiresAt?: Date;
+}
+
+export interface PaymentGatewayCallback {
+  valid: boolean;
+  transactionRef?: string;
+  gatewayTransactionNo?: string;
+  amount?: number;
+  successful: boolean;
+  finalFailure: boolean;
+  responseCode?: string;
+  transactionStatus?: string;
+  processedAt: Date;
 }
 
 export interface PaymentResponse {
@@ -58,9 +77,16 @@ export interface PaymentResponse {
   resultCode: PaymentResultCode;
   retryable: boolean;
   processedAt: string | null;
+  checkoutUrl: string | null;
+  expiresAt: string | null;
 }
 
 export interface PaymentExecutionResult {
   httpStatus: number;
   body: PaymentResponse;
+}
+
+export interface VnpayIpnResponse {
+  RspCode: string;
+  Message: string;
 }

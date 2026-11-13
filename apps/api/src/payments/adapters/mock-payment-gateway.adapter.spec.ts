@@ -53,6 +53,7 @@ describe("MockPaymentGatewayAdapter", () => {
       "maps %s to the contract outcome",
       async (scenario) => {
         const request: PaymentGatewayRequest = {
+          paymentId: "30000000-0000-4000-8000-000000000001",
           orderId: "10000000-0000-4000-8000-000000000001",
           idempotencyKey: "20000000-0000-4000-8000-000000000001",
           method,
@@ -69,9 +70,10 @@ describe("MockPaymentGatewayAdapter", () => {
 
   it("defaults to SUCCESS when the caller omits the mock scenario", async () => {
     const request: PaymentGatewayRequest = {
+      paymentId: "30000000-0000-4000-8000-000000000001",
       orderId: "10000000-0000-4000-8000-000000000001",
       idempotencyKey: "20000000-0000-4000-8000-000000000001",
-      method: "WALLET",
+      method: "VNPAY",
       amount: 58000,
     };
 

@@ -82,12 +82,21 @@ export default function BaristaDashboardPage() {
       const updatedOrder = await transitionOrderStatusApi(orderId, nextStatus, token);
       // Cập nhật state chỉ khi API trả về thành công
       setOrders((prev) =>
-        prev.map((o) => (o.id === orderId ? { ...o, status: updatedOrder.status } : o)),
+        prev.map((o) =>
+          o.id === orderId ? { ...o, status: updatedOrder.status } : o,
+        ),
       );
     } catch (err: any) {
-      setErrorMessage(
-        err.message || 'Không thể cập nhật trạng thái đơn hàng. Vui lòng thử lại.',
-      );
+      const message =
+        err.message ||
+        'Không thể cập nhật trạng thái đơn hàng. Vui lòng thử lại.';
+
+      // Một nhân viên khác có thể vừa nhận đơn trên màn hình khác. Khi API
+      // từ chối bằng 409, tải lại queue để không còn hiển thị trạng thái PAID cũ.
+      if (err instanceof BaristaApiError && err.statusCode === 409) {
+        await loadOrders();
+      }
+      setErrorMessage(message);
     } finally {
       setBusyOrderId(null);
     }
@@ -385,14 +394,30 @@ export default function BaristaDashboardPage() {
                 </div>
 
                 <div className="pt-3 border-t border-outline-variant/20 mt-2">
-                  <div className="flex justify-between items-center text-body-sm mb-3">
-                    <span className="text-on-surface-variant flex items-center gap-1 text-[12px]">
-                      <Clock className="w-3.5 h-3.5" />
-                      {new Date(order.createdAt).toLocaleTimeString('vi-VN', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
+                  <div className="flex justify-between items-start text-body-sm mb-3 gap-3">
+                    <div className="text-on-surface-variant text-[12px] space-y-1">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" />
+                        Đặt lúc{' '}
+                        {new Date(order.createdAt).toLocaleTimeString('vi-VN', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                      {order.paidAt && (
+                        <span className="flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Thanh toán:{' '}
+                          {new Date(order.paidAt).toLocaleString('vi-VN', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      )}
+                    </div>
                     <span className="font-bold text-secondary">{formatCurrency(order.total)}</span>
                   </div>
 

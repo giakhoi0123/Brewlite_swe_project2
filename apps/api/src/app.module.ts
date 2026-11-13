@@ -12,7 +12,7 @@ import { PaymentsModule } from './payments/payments.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env', 'apps/api/.env', '../apps/api/.env'],
+      envFilePath: ['.env', 'apps/api/.env', '../apps/api/.env', '../../.env'],
     }),
     PrismaModule,
     ProductsModule,

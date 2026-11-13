@@ -1,4 +1,5 @@
 import {
+  PaymentGatewayCallback,
   MockPaymentScenario,
   PaymentGatewayRequest,
   PaymentGatewayResult,
@@ -45,6 +46,8 @@ const MOCK_OUTCOMES = {
 export class MockPaymentGatewayAdapter implements PaymentGatewayPort {
   constructor(private readonly now: () => Date = () => new Date()) {}
 
+  assertReady(): void {}
+
   async process(request: PaymentGatewayRequest): Promise<PaymentGatewayResult> {
     const scenario = request.scenario ?? "SUCCESS";
     const { completed, ...outcome } = MOCK_OUTCOMES[scenario];
@@ -52,6 +55,16 @@ export class MockPaymentGatewayAdapter implements PaymentGatewayPort {
     return {
       ...outcome,
       processedAt: completed ? this.now() : null,
+    };
+  }
+
+  verifyCallback(params: Record<string, string>): PaymentGatewayCallback {
+    void params;
+    return {
+      valid: false,
+      successful: false,
+      finalFailure: false,
+      processedAt: this.now(),
     };
   }
 }

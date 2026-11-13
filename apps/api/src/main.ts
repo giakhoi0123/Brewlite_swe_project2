@@ -25,7 +25,7 @@ async function bootstrap() {
     'Accept',
     'Idempotency-Key',
   ];
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV === 'test') {
     allowedHeaders.push('X-Mock-Payment-Scenario');
   }
 

@@ -46,13 +46,11 @@ ENV PORT=3005
 RUN groupadd -g 1001 nodejs && \
     useradd -u 1001 -g nodejs -m -d /home/nestjs nestjs
 
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/tsconfig.json ./tsconfig.json
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-
-RUN chown -R nestjs:nodejs /app
+COPY --chown=nestjs:nodejs --from=builder /app/package.json ./package.json
+COPY --chown=nestjs:nodejs --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --chown=nestjs:nodejs --from=builder /app/prisma ./prisma
+COPY --chown=nestjs:nodejs --from=builder /app/node_modules ./node_modules
+COPY --chown=nestjs:nodejs --from=builder /app/dist ./dist
 
 USER nestjs
 

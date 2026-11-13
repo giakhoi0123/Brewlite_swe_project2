@@ -101,7 +101,7 @@ describe('Order State Machine (Unit Tests - Pure Logic)', () => {
     });
   });
 
-  describe('7. PAID cannot be cancelled directly in Barista flow', () => {
+  describe('7. PAID cannot be cancelled', () => {
     it('rejects direct transition from PAID to CANCELLED', () => {
       expect(canTransition(OrderStatus.PAID, OrderStatus.CANCELLED)).toBe(false);
       expect(() =>

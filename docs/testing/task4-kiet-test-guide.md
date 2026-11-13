@@ -60,10 +60,10 @@ The integration guard rejects a `DATABASE_URL` whose database name does not cont
 `test` segment. A rejection such as `Refusing to run integration tests against non-test
 database "brewlite_db"` is a successful safety check, not a product-test failure.
 
-## Payment mock contract checks
+## Payment contract checks
 
-There is no Payment endpoint implementation in Task 4. Validate the draft types/fixtures and
-read the contract instead of calling `/api/payments`:
+Task 4 originally used draft fixtures. The current implementation uses VNPay Sandbox; validate
+the current contract and keep deterministic mock fixtures for automated tests only:
 
 ```powershell
 cd apps/api

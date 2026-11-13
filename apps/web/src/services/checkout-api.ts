@@ -1,8 +1,16 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3005/api';
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005/api";
 
-export type PaymentMethod = 'WALLET' | 'CARD';
-export type PaymentStatus = 'PROCESSING' | 'PAID' | 'FAILED' | 'UNKNOWN';
-export type PaymentOrderStatus = 'PENDING' | 'PAID' | 'PAYMENT_FAILED';
+export type PaymentMethod = "VNPAY";
+export type PaymentStatus =
+  | "PROCESSING"
+  | "PAID"
+  | "FAILED"
+  | "UNKNOWN";
+export type PaymentOrderStatus =
+  | "PENDING"
+  | "PAID"
+  | "PAYMENT_FAILED";
 
 // 1. Cập nhật Interface khớp chính xác DTO Backend đòi hỏi
 export interface OrderItemPayload {
@@ -22,7 +30,7 @@ export interface CreateOrderPayload {
 export interface OrderResponse {
   id: string;
   orderNumber?: string;
-  status: 'PENDING' | 'PAID' | 'CANCELLED';
+  status: "PENDING" | "PAID" | "CANCELLED";
   subtotal: number;
   discount: number;
   total: number;
@@ -44,6 +52,8 @@ export interface PaymentResponse {
   resultCode: string;
   retryable: boolean;
   processedAt: string | null;
+  checkoutUrl: string | null;
+  expiresAt: string | null;
 }
 
 export class CheckoutApiError extends Error {
@@ -54,7 +64,7 @@ export class CheckoutApiError extends Error {
     public retryable?: boolean,
   ) {
     super(message);
-    this.name = 'CheckoutApiError';
+    this.name = "CheckoutApiError";
   }
 }
 
@@ -63,11 +73,11 @@ export async function createOrderApi(
   token?: string | null,
 ): Promise<OrderResponse> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
+    "Content-Type": "application/json",
+    Accept: "application/json",
   };
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   // Chỉ gửi dữ liệu lựa chọn của khách. Danh tính lấy từ JWT và toàn bộ giá
@@ -90,37 +100,44 @@ export async function createOrderApi(
 
   try {
     const res = await fetch(`${API_BASE_URL}/orders`, {
-      method: 'POST',
+      method: "POST",
       headers,
-      credentials: 'include',
+      credentials: "include",
       body: JSON.stringify(formattedPayload),
     });
 
-    const isJson = res.headers.get('content-type')?.includes('application/json');
+    const isJson = res.headers
+      .get("content-type")
+      ?.includes("application/json");
     const data = isJson ? await res.json() : null;
 
     if (!res.ok) {
       // Xử lý thông báo lỗi dạng mảng (nếu có từ class-validator NestJS)
       const errorMsg = Array.isArray(data?.message)
-        ? data.message.join(', ')
+        ? data.message.join(", ")
         : data?.message;
 
       if (res.status === 409) {
         throw new CheckoutApiError(
-          errorMsg || 'Một hoặc nhiều món trong giỏ hàng đã hết hoặc không đủ số lượng.',
+          errorMsg ||
+            "Một hoặc nhiều món trong giỏ hàng đã hết hoặc không đủ số lượng.",
           409,
-          'INVENTORY_CONFLICT',
+          "INVENTORY_CONFLICT",
           false,
         );
       }
       if (res.status === 401) {
-        throw new CheckoutApiError('Yêu cầu đăng nhập để tạo đơn hàng.', 401, 'UNAUTHORIZED');
+        throw new CheckoutApiError(
+          "Yêu cầu đăng nhập để tạo đơn hàng.",
+          401,
+          "UNAUTHORIZED",
+        );
       }
       if (res.status === 404 || res.status === 501) {
         throw new CheckoutApiError(
-          'Hệ thống tiếp nhận đơn hàng (Orders API) đang trong quá trình bàn giao và nâng cấp.',
+          "Hệ thống tiếp nhận đơn hàng (Orders API) đang trong quá trình bàn giao và nâng cấp.",
           res.status,
-          'MODULE_PENDING_HANDOFF',
+          "MODULE_PENDING_HANDOFF",
           true,
         );
       }
@@ -134,9 +151,9 @@ export async function createOrderApi(
   } catch (err: any) {
     if (err instanceof CheckoutApiError) throw err;
     throw new CheckoutApiError(
-      'Không thể kết nối đến hệ thống tạo đơn. Vui lòng kiểm tra lại kết nối mạng.',
+      "Không thể kết nối đến hệ thống tạo đơn. Vui lòng kiểm tra lại kết nối mạng.",
       0,
-      'NETWORK_ERROR',
+      "NETWORK_ERROR",
       true,
     );
   }
@@ -147,29 +164,26 @@ export async function processPaymentApi(
   method: PaymentMethod,
   idempotencyKey: string,
   token?: string | null,
-  mockScenario?: string,
 ): Promise<PaymentResponse> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    'Idempotency-Key': idempotencyKey,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "Idempotency-Key": idempotencyKey,
   };
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    headers["Authorization"] = `Bearer ${token}`;
   }
-  if (mockScenario && process.env.NODE_ENV !== 'production') {
-    headers['X-Mock-Payment-Scenario'] = mockScenario;
-  }
-
   try {
     const res = await fetch(`${API_BASE_URL}/payments`, {
-      method: 'POST',
+      method: "POST",
       headers,
-      credentials: 'include',
+      credentials: "include",
       body: JSON.stringify({ orderId, method }),
     });
 
-    const isJson = res.headers.get('content-type')?.includes('application/json');
+    const isJson = res.headers
+      .get("content-type")
+      ?.includes("application/json");
     const data = isJson ? await res.json() : null;
 
     // A determinate decline is an accepted and persisted Payment outcome, not
@@ -180,20 +194,23 @@ export async function processPaymentApi(
     }
 
     if (!res.ok) {
-      const errorMsg = Array.isArray(data?.message) ? data.message.join(', ') : data?.message;
+      const errorMsg = Array.isArray(data?.message)
+        ? data.message.join(", ")
+        : data?.message;
       if (res.status === 409) {
         throw new CheckoutApiError(
-          errorMsg || 'Xung đột khóa giao dịch (Idempotency Key Conflict) hoặc đơn đã thanh toán.',
+          errorMsg ||
+            "Xung đột khóa giao dịch (Idempotency Key Conflict) hoặc đơn đã thanh toán.",
           409,
-          'IDEMPOTENCY_CONFLICT',
+          "IDEMPOTENCY_CONFLICT",
           false,
         );
       }
       if (res.status === 404 || res.status === 501) {
         throw new CheckoutApiError(
-          'Hệ thống cổng thanh toán (Payment Gateway API) đang trong quá trình bàn giao và nâng cấp.',
+          "Hệ thống cổng thanh toán (Payment Gateway API) đang trong quá trình bàn giao và nâng cấp.",
           res.status,
-          'MODULE_PENDING_HANDOFF',
+          "MODULE_PENDING_HANDOFF",
           true,
         );
       }
@@ -207,10 +224,52 @@ export async function processPaymentApi(
   } catch (err: any) {
     if (err instanceof CheckoutApiError) throw err;
     throw new CheckoutApiError(
-      'Lỗi kết nối khi gửi yêu cầu thanh toán. Trạng thái đang được giữ để đối soát.',
+      "Lỗi kết nối khi gửi yêu cầu thanh toán. Trạng thái đang được giữ để đối soát.",
       0,
-      'NETWORK_ERROR',
+      "NETWORK_ERROR",
       false,
+    );
+  }
+}
+
+export async function getPaymentStatusApi(
+  paymentId: string,
+  token?: string | null,
+): Promise<PaymentResponse> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/payments/${encodeURIComponent(paymentId)}`,
+      {
+        method: "GET",
+        headers,
+        credentials: "include",
+        cache: "no-store",
+      },
+    );
+    const isJson = res.headers
+      .get("content-type")
+      ?.includes("application/json");
+    const data = isJson ? await res.json() : null;
+    if (!res.ok) {
+      throw new CheckoutApiError(
+        data?.message ||
+          `Không thể đọc trạng thái thanh toán (HTTP ${res.status})`,
+        res.status,
+        data?.code,
+        data?.retryable,
+      );
+    }
+    return data as PaymentResponse;
+  } catch (err: any) {
+    if (err instanceof CheckoutApiError) throw err;
+    throw new CheckoutApiError(
+      "Không thể kết nối để kiểm tra trạng thái thanh toán VNPay.",
+      0,
+      "NETWORK_ERROR",
+      true,
     );
   }
 }
