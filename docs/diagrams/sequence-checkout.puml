@@ -15,7 +15,7 @@ database "PostgreSQL" as DB
 participant "Payment Service\n(Mock)" as Pay
 
 Customer -> UI: Xác nhận checkout
-UI -> API: POST /orders + JWT + cart DTO
+UI -> API: POST /api/orders + JWT + cart DTO
 API -> API: Verify JWT, validate DTO, tính lại giá
 
 alt Chưa đăng nhập / JWT không hợp lệ
@@ -34,7 +34,7 @@ else JWT hợp lệ
     DB --> API: orderId
     API --> UI: 201 Created + orderId
 
-    UI -> API: POST /payments\norderId, method, Idempotency-Key
+    UI -> API: POST /api/payments\norderId, method, Idempotency-Key
     API -> DB: Tìm Payment theo Idempotency-Key
     alt Khóa đã tồn tại
       DB --> API: Kết quả thanh toán đã lưu
@@ -50,7 +50,7 @@ else JWT hợp lệ
       API -> Pay: pay(orderId, amount, method)
       alt Thanh toán thành công
         Pay --> API: PAID
-        API -> DB: BEGIN Tx B; Payment=PAID; Order=PAID;\nReservation ACTIVE -> CONSUMED;\ntăng Order.version; ghi history; COMMIT
+        API -> DB: BEGIN Tx B; Payment=PAID; Order=PAID;\nReservation ACTIVE -> CONSUMED;\ncộng loyaltyPoints; tăng Promotion.usedCount;\ntăng Order.version; ghi history; COMMIT
         API --> UI: 200 PAID + confirmation
         UI --> Customer: Xóa giỏ, hiển thị mã đơn
       else Thanh toán thất bại

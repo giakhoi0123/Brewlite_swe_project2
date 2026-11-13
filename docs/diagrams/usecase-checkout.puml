@@ -19,6 +19,8 @@ rectangle "BrewLite - Phạm vi UC-01" {
   usecase "Kiểm tra, giữ tồn kho và\ntạo đơn PENDING\n(FR-04, FR-07)" as CreateOrder
   usecase "Thanh toán Ví / Thẻ\nvới Idempotency-Key\n(FR-05)" as Pay
   usecase "Áp dụng mã giảm giá\nhợp lệ\n(FR-08)" as Promo
+  usecase "Thử thanh toán lại\nkhi đơn thất bại\n(FR-05)" as RetryPay
+  usecase "Tích / đổi điểm thưởng\n(FR-09)" as Loyalty
   usecase "Trả kết quả, mã đơn và\ntrạng thái đơn\n(FR-06)" as Confirm
 }
 
@@ -28,6 +30,8 @@ Checkout ..> CreateOrder : <<include>>
 Checkout ..> Pay : <<include>>
 Checkout ..> Confirm : <<include>>
 Promo ..> Checkout : <<extend>>
+RetryPay ..> Checkout : <<extend>>
+Loyalty ..> Checkout : <<extend>>
 Gateway -- Pay
 
 note bottom of Checkout
