@@ -232,7 +232,7 @@ export function extractAuthenticatedActor(
  * Tuyệt đối không trả về:
  * - reservation, reservation lines
  * - ingredientId, ingredient amounts, stock
- * - version nội bộ, passwordHash, sessionVersion, loyaltyLog
+ * - version nội bộ, passwordHash, sessionVersion, loyaltyTransaction
  */
 export interface CustomerOrderItemOptionResponse {
   id: string;

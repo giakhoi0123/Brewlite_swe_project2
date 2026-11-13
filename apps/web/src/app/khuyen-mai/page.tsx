@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3005/api';
+
 interface Promotion {
   id: string;
   code: string;
@@ -48,7 +50,7 @@ export default function PromotionsAndLoyaltyPage() {
   const loadData = useCallback(() => {
     const headers = getAuthHeaders();
 
-    const fetchPromotions = fetch('http://localhost:3005/api/promotions', {
+    const fetchPromotions = fetch(`${API_URL}/promotions`, {
       headers,
       credentials: 'include',
     })
@@ -56,7 +58,7 @@ export default function PromotionsAndLoyaltyPage() {
       .catch(() => []);
 
     const fetchLoyalty = activeUserId
-      ? fetch(`http://localhost:3005/api/loyalty/user/${activeUserId}`, {
+      ? fetch(`${API_URL}/loyalty/user/${activeUserId}`, {
           headers,
           credentials: 'include',
         })
@@ -119,7 +121,7 @@ export default function PromotionsAndLoyaltyPage() {
     setMessage(null);
 
     try {
-      const res = await fetch('http://localhost:3005/api/loyalty/redeem', {
+      const res = await fetch(`${API_URL}/loyalty/redeem`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

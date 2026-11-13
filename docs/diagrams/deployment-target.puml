@@ -41,15 +41,15 @@ node "AWS EC2 Instance (47.129.101.36)\nUbuntu 26.04.1 LTS | SG: 22, 80, 443" as
 
   node "Docker Compose (brewlite_swe_project2_default)" as compose_net {
     node "brewlite-web (:3006)" as web {
-      artifact "Next.js Production\nNEXT_PUBLIC_API_URL=\nhttps://brewlite.duckdns.org/api" as next
+      artifact "Next.js Production\nHealthcheck: GET /\nNEXT_PUBLIC_API_URL=\nhttps://brewlite.duckdns.org/api" as next
     }
 
     node "brewlite-api (:3005)" as api {
-      artifact "NestJS API\nGET /api/products" as nest
+      artifact "NestJS API\nHealthcheck: GET /api/products" as nest
     }
 
     node "brewlite-migration (one-shot)" as mig {
-      artifact "npx prisma migrate deploy\n(image: brewlite-api:latest)" as migrate
+      artifact "npx prisma migrate deploy\n(build: ./apps/api/Dockerfile, restart: no)" as migrate
     }
 
     database "brewlite-postgres (:5432)" as db {
@@ -63,7 +63,7 @@ node "AWS EC2 Instance (47.129.101.36)\nUbuntu 26.04.1 LTS | SG: 22, 80, 443" as
 
 node "GitHub" as github {
   artifact "Repository\ngiakhoi0123/Brewlite_swe_project2" as repo
-  artifact "GitHub Actions CI\npreflight + backend-ci + frontend-ci" as actions
+  artifact "GitHub Actions CI (Quality Gate)\npreflight -> backend-ci + frontend-ci -> summary\n(Lint, Unit/Integration Test, Prisma Migrate, Build)" as actions
 }
 
 node "Môi trường Local / Deploy" as local {

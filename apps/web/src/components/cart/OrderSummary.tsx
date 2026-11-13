@@ -7,6 +7,8 @@ import { ArrowLeft, ArrowRight, BadgePercent, ReceiptText, Snowflake, X, Zap } f
 import { CartSummary, FREE_SHIPPING_THRESHOLD } from '../../lib/cart-summary';
 import { formatCurrency } from '../../utils/format';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3005/api';
+
 interface OrderSummaryProps {
   summary: CartSummary;
   isChecking?: boolean;
@@ -36,7 +38,7 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({ summary, onApplyVouc
     setMessage(null);
 
     try {
-      const res = await fetch('http://localhost:3005/api/promotions/validate', {
+      const res = await fetch(`${API_URL}/promotions/validate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

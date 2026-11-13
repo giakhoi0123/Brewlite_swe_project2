@@ -1,14 +1,9 @@
 @startuml
 !pragma layout smetana
 left to right direction
-
-title UC-01 - Đặt hàng và thanh toán VNPay
-
 skinparam shadowing false
 skinparam packageStyle rectangle
 skinparam defaultFontName "Noto Sans"
-skinparam nodesep 30
-skinparam ranksep 35
 skinparam usecase {
   BackgroundColor #FFFDF8
   BorderColor #5D4037
@@ -16,28 +11,35 @@ skinparam usecase {
 }
 
 actor "Khách hàng" as Customer
-actor "VNPay Sandbox" as VNPay
+actor "Dịch vụ thanh toán\nmô phỏng" as Gateway
 
-rectangle "BrewLite - Checkout" {
-  usecase "Đặt và thanh toán\nđơn hàng" as Checkout
-  usecase "Tạo đơn PENDING\n(tính giá, voucher, đổi điểm,\ngiữ tồn kho)" as CreateOrder
-  usecase "Thanh toán qua\nVNPay Sandbox" as Pay
-  usecase "Thanh toán lại đơn\nPAYMENT_FAILED\n(tái kiểm tra và giữ kho)" as RetryPayment
-  usecase "Xử lý kết quả IPN\n(PAID/FAILED, kho,\nđiểm, khuyến mãi)" as ProcessIpn
-  usecase "Xem kết quả thanh toán\n(Return + polling)" as ViewResult
+rectangle "BrewLite - Phạm vi UC-01" {
+  usecase "UC-01\nĐặt và thanh toán\nđơn hàng" as Checkout
+  usecase "Xác thực, kiểm tra giỏ\nvà tính lại giá\n(FR-02, FR-03, FR-04)" as Validate
+  usecase "Kiểm tra, giữ tồn kho và\ntạo đơn PENDING\n(FR-04, FR-07)" as CreateOrder
+  usecase "Thanh toán Ví / Thẻ\nvới Idempotency-Key\n(FR-05)" as Pay
+  usecase "Áp dụng mã giảm giá\nhợp lệ\n(FR-08)" as Promo
+  usecase "Thử thanh toán lại\nkhi đơn thất bại\n(FR-05)" as RetryPay
+  usecase "Tích / đổi điểm thưởng\n(FR-09)" as Loyalty
+  usecase "Trả kết quả, mã đơn và\ntrạng thái đơn\n(FR-06)" as Confirm
 }
 
 Customer -- Checkout
-Customer -- RetryPayment
-
+Checkout ..> Validate : <<include>>
 Checkout ..> CreateOrder : <<include>>
 Checkout ..> Pay : <<include>>
-Checkout ..> ViewResult : <<include>>
-RetryPayment ..> Pay : <<extend>>
-Pay ..> ProcessIpn : <<include>>
+Checkout ..> Confirm : <<include>>
+Promo ..> Checkout : <<extend>>
+RetryPay ..> Checkout : <<extend>>
+Loyalty ..> Checkout : <<extend>>
+Gateway -- Pay
 
-VNPay -- Pay
-VNPay -- ProcessIpn
-VNPay -- ViewResult
-
+note bottom of Checkout
+Tiền điều kiện: khách đã đăng nhập;
+giỏ có ít nhất một món hợp lệ.
+Thành công: Order và Payment = PAID; trả mã đơn.
+Thất bại xác định: Payment = FAILED,
+Order = PAYMENT_FAILED; hoàn kho đúng một lần.
+Timeout/UNKNOWN: Order giữ PENDING để đối soát.
+end note
 @enduml

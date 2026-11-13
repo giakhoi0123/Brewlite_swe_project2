@@ -1,10 +1,6 @@
 @startuml
-
-title Sequence Diagram - Checkout VNPay
-
 skinparam shadowing false
 skinparam defaultFontName "Noto Sans"
-skinparam maxMessageSize 120
 skinparam sequence {
   ArrowColor #5D4037
   LifeLineBorderColor #5D4037
@@ -12,138 +8,63 @@ skinparam sequence {
   ParticipantBackgroundColor #FFFDF8
 }
 
-actor "Khách hàng" as Customer
-boundary "CheckoutPage" as Page
-control "checkout-api.ts" as WebApi
-control "OrdersController" as OrdersController
-control "OrdersService" as OrdersService
-control "PaymentsController" as PaymentsController
-control "PaymentsService" as PaymentsService
-control "VnpayPaymentGatewayAdapter" as VnpayAdapter
-database "PostgreSQL / Prisma" as DB
-participant "VNPay Sandbox" as VNPay
+actor Customer
+participant "Next.js UI" as UI
+participant "NestJS API" as API
+database "PostgreSQL" as DB
+participant "Payment Service\n(Mock)" as Pay
 
-Customer -> Page: Xác nhận checkout
-Page -> WebApi: createOrderApi(payload, JWT)
-WebApi -> OrdersController: POST /api/orders\nitems, voucherCode, pointsToRedeem, notes
-OrdersController -> OrdersService: createOrder(authenticatedUserId, dto)
-OrdersService -> DB: BEGIN transaction; đọc User, Product, Option, Promotion
-OrdersService -> OrdersService: Tính lại giá; validate voucher và pointsToRedeem
+Customer -> UI: Xác nhận checkout
+UI -> API: POST /api/orders + JWT + cart DTO
+API -> API: Verify JWT, validate DTO, tính lại giá
 
-alt JWT/DTO/voucher/điểm không hợp lệ
-  OrdersService -> DB: ROLLBACK
-  OrdersService --> WebApi: 400/401
-  WebApi --> Page: CheckoutApiError
-  Page --> Customer: Hiển thị lỗi
-else Dữ liệu hợp lệ
-  opt pointsToRedeem > 0
-    OrdersService -> DB: UPDATE User loyaltyPoints -= pointsRedeemed\nINSERT LoyaltyLog(points âm)
-  end
-  OrdersService -> DB: SELECT Ingredient FOR UPDATE theo thứ tự ID
-  alt Không đủ tồn kho
-    OrdersService -> DB: ROLLBACK
-    OrdersService --> WebApi: 409 INVENTORY_CONFLICT
-    WebApi --> Page: CheckoutApiError
-    Page --> Customer: Thông báo thiếu nguyên liệu
-  else Đủ tồn kho
-    OrdersService -> DB: Trừ Ingredient; INSERT Order PENDING + OrderItem\nINSERT reservation ACTIVE + reservation lines; COMMIT
-    OrdersService --> OrdersController: CreateOrderResult
-    OrdersController --> WebApi: 201 Created + orderId
-    WebApi --> Page: OrderResponse
+alt Chưa đăng nhập / JWT không hợp lệ
+  API --> UI: 401 Unauthorized
+  UI --> Customer: Chuyển /login rồi quay lại checkout
+else JWT hợp lệ
+  API -> DB: BEGIN; khóa và kiểm tra tồn kho
+  alt Hết hàng / xung đột
+    DB --> API: Không đủ tồn kho
+    API -> DB: ROLLBACK
+    API --> UI: 409 Conflict
+    UI --> Customer: Thông báo hết hàng
+  else Đủ hàng
+    API -> DB: Giữ kho; INSERT Order PENDING + OrderItem
+    API -> DB: COMMIT
+    DB --> API: orderId
+    API --> UI: 201 Created + orderId
 
-    Page -> WebApi: processPaymentApi(orderId, VNPAY, Idempotency-Key, JWT)
-    WebApi -> PaymentsController: POST /api/payments\nIdempotency-Key + {orderId, method: VNPAY}
-    PaymentsController -> PaymentsService: processPayment(userId, key, dto, clientIp)
-    PaymentsService -> DB: Tìm Payment theo Idempotency-Key
-
-    alt Idempotency-Key đã tồn tại
-      DB --> PaymentsService: Payment đã lưu
-      PaymentsService --> PaymentsController: Cùng HTTP status + PaymentResponse
-      PaymentsController --> WebApi: Replay response
-    else Key mới
-      PaymentsService -> VnpayAdapter: assertReady()
-      PaymentsService -> DB: BEGIN Transaction A; khóa Order + Reservation
-
-      alt Order = PAYMENT_FAILED (retry)
-        PaymentsService -> OrdersService: transitionOrderStatusInTransaction(\nPAYMENT_FAILED -> PENDING, actor=PAYMENT)
-        OrdersService -> DB: Khóa/kiểm tra Ingredient; trừ kho\nReservation RELEASED -> ACTIVE; ghi history
-      else Order = PENDING
-        PaymentsService -> DB: Kiểm tra reservation = ACTIVE
+    UI -> API: POST /api/payments\norderId, method, Idempotency-Key
+    API -> DB: Tìm Payment theo Idempotency-Key
+    alt Khóa đã tồn tại
+      DB --> API: Kết quả thanh toán đã lưu
+      API --> UI: Trả lại cùng kết quả
+    else Khóa mới
+      API -> DB: BEGIN Tx A; khóa/kiểm tra Order + Reservation
+      alt Retry sau PAYMENT_FAILED
+        API -> DB: Kiểm tra lại tồn kho; trừ kho\nReservation RELEASED -> ACTIVE\nOrder PAYMENT_FAILED -> PENDING; ghi history
+      else Order PENDING lần đầu
+        API -> DB: Xác nhận Reservation ACTIVE
       end
-
-      PaymentsService -> DB: INSERT Payment PROCESSING; COMMIT Transaction A
-      PaymentsService -> VnpayAdapter: process(paymentId, orderId, amount, clientIp)
-      VnpayAdapter -> VnpayAdapter: Tạo vnp_TxnRef; amount * 100;\nký query HMAC-SHA512
-      VnpayAdapter --> PaymentsService: PROCESSING + checkoutUrl + expiresAt
-      PaymentsService -> DB: Lưu providerTxnRef, checkoutUrl, expiresAt
-      PaymentsService --> PaymentsController: HTTP 202 + PaymentResponse
-      PaymentsController --> WebApi: 202 PROCESSING + checkoutUrl
-    end
-
-    WebApi --> Page: PaymentResponse
-    Page -> VNPay: Redirect checkoutUrl
-    VNPay --> Customer: Chọn phương thức và xác thực giao dịch
-
-    par IPN server-to-server - nguồn xác nhận chính thức
-      VNPay -> PaymentsController: GET /api/payments/vnpay-ipn
-      PaymentsController -> PaymentsService: handleVnpayIpn(query)
-      PaymentsService -> VnpayAdapter: verifyCallback(query)
-      VnpayAdapter --> PaymentsService: valid, TxnRef, amount, kết quả
-      PaymentsService -> DB: Tìm Payment theo providerTxnRef; kiểm tra amount
-
-      alt Chữ ký/merchant/amount không hợp lệ
-        PaymentsService --> PaymentsController: RspCode 97/04
-        PaymentsController --> VNPay: Từ chối callback
-      else Thành công: ResponseCode=00 và TransactionStatus=00
-        PaymentsService -> DB: BEGIN Transaction B
-        PaymentsService -> OrdersService: transitionOrderStatusInTransaction(\nPENDING -> PAID, actor=PAYMENT)
-        OrdersService -> DB: Reservation ACTIVE -> CONSUMED; Order -> PAID\nCộng floor(total/10.000) vào User.loyaltyPoints\nINSERT LoyaltyLog; Promotion.usedCount += 1 nếu có\nINSERT OrderStatusHistory
-        PaymentsService -> DB: Payment -> PAID; lưu gatewayTxnNo/processedAt; COMMIT
-        PaymentsService --> PaymentsController: {RspCode: "00", Message: "Confirm success"}
-        PaymentsController --> VNPay: HTTP 200 + RspCode 00
-      else Thất bại xác định
-        PaymentsService -> DB: BEGIN Transaction B
-        PaymentsService -> OrdersService: transitionOrderStatusInTransaction(\nPENDING -> PAYMENT_FAILED, actor=PAYMENT)
-        OrdersService -> DB: Hoàn Ingredient đúng một lần;\nReservation ACTIVE -> RELEASED; Order -> PAYMENT_FAILED
-        PaymentsService -> DB: Payment -> FAILED; COMMIT
-        PaymentsService --> PaymentsController: {RspCode: "00", Message: "Confirm success"}
-        PaymentsController --> VNPay: HTTP 200 + RspCode 00
-      else Trạng thái chưa xác định
-        PaymentsService -> DB: Payment -> UNKNOWN; Order vẫn PENDING
-        PaymentsService --> PaymentsController: {RspCode: "00", Message: "Confirm success"}
-        PaymentsController --> VNPay: HTTP 200 + RspCode 00
+      API -> DB: INSERT Payment PROCESSING\nCOMMIT Tx A
+      API -> Pay: pay(orderId, amount, method)
+      alt Thanh toán thành công
+        Pay --> API: PAID
+        API -> DB: BEGIN Tx B; Payment=PAID; Order=PAID;\nReservation ACTIVE -> CONSUMED;\ncộng loyaltyPoints; tăng Promotion.usedCount;\ntăng Order.version; ghi history; COMMIT
+        API --> UI: 200 PAID + confirmation
+        UI --> Customer: Xóa giỏ, hiển thị mã đơn
+      else Thanh toán thất bại
+        Pay --> API: FAILED
+        API -> DB: BEGIN Tx B; Payment=FAILED;\nOrder=PAYMENT_FAILED; hoàn kho 1 lần;\nReservation ACTIVE -> RELEASED;\ntăng Order.version; ghi history; COMMIT
+        API --> UI: 402 Payment response\nresultCode=PAYMENT_DECLINED
+        UI --> Customer: Giữ giỏ; thử lại cùng orderId với key mới
+      else Timeout / UNKNOWN
+        Pay --> API: timeout
+        API -> DB: BEGIN Tx B; Payment=UNKNOWN;\ngiữ Order=PENDING + Reservation ACTIVE; COMMIT
+        API --> UI: 202 Processing/Unknown
+        UI --> Customer: Thông báo đang xác minh
       end
-
-    else Browser Return - chỉ dùng điều hướng
-      VNPay -> PaymentsController: GET /api/payments/vnpay-return
-      PaymentsController -> PaymentsService: resolveVnpayReturn(query)
-      PaymentsService -> VnpayAdapter: verifyCallback(query)
-      VnpayAdapter --> PaymentsService: valid + transactionRef
-      PaymentsService -> DB: Tìm paymentId theo providerTxnRef
-      PaymentsService --> PaymentsController: frontend return URL
-      PaymentsController --> Page: 302 /checkout/vnpay-return?paymentId=...
-      loop Trong khi Payment còn PROCESSING/UNKNOWN
-        Page -> WebApi: getPaymentStatusApi(paymentId, JWT)
-        WebApi -> PaymentsController: GET /api/payments/:paymentId
-        PaymentsController -> PaymentsService: getPaymentStatus(userId, paymentId)
-        PaymentsService -> DB: Đọc Payment và kiểm tra chủ sở hữu
-        PaymentsService --> Page: PaymentResponse đã lưu
-      end
-      Page --> Customer: Hiển thị kết quả; xóa giỏ khi PAID
-    end
-
-    opt Payment = FAILED và khách chọn thử lại
-      Customer -> Page: Thử thanh toán lại
-      Page -> WebApi: processPaymentApi(orderId, VNPAY, Idempotency-Key mới, JWT)
-      WebApi -> PaymentsController: POST /api/payments
-      PaymentsController -> PaymentsService: processPayment(...)
-      PaymentsService -> DB: Tx A: kiểm tra lại kho; RELEASED -> ACTIVE;\nPAYMENT_FAILED -> PENDING; tạo Payment PROCESSING
-      note over PaymentsService,VNPay
-        Sau khi tái giữ kho thành công, hệ thống tạo checkoutUrl mới
-        và lặp lại luồng VNPay/IPN như giao dịch phía trên.
-      end note
     end
   end
 end
-
 @enduml

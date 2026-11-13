@@ -82,7 +82,7 @@ model User {
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   passwordResetTokens PasswordResetToken[]
-  loyaltyLogs         LoyaltyLog[]
+  loyaltyTransactions LoyaltyTransaction[]
   orders              Order[]
 
   @@map("users")
@@ -182,7 +182,7 @@ model Promotion {
   @@map("promotions")
 }
 
-model LoyaltyLog {
+model LoyaltyTransaction {
   id        String      @id @default(uuid()) @db.Uuid
   userId    String      @map("user_id") @db.Uuid
   orderId   String?     @map("order_id") @db.Uuid
@@ -198,33 +198,33 @@ model LoyaltyLog {
   @@unique([orderId, type])
   @@index([userId])
   @@index([orderId])
-  @@map("loyalty_logs")
+  @@map("loyalty_transactions")
 }
 
 model Order {
-  id             String                     @id @default(uuid()) @db.Uuid
-  orderNumber    String                     @unique @map("order_number") @db.VarChar(50)
-  userId         String                     @map("user_id") @db.Uuid
-  status         OrderStatus                @default(PENDING)
-  version        Int                        @default(1)
-  subtotal       Decimal                    @db.Decimal(10, 2)
-  discount       Decimal                    @default(0) @db.Decimal(10, 2)
-  total          Decimal                    @db.Decimal(10, 2)
-  voucherCode    String?                    @map("voucher_code") @db.VarChar(50)
-  promotionId    String?                    @map("promotion_id") @db.Uuid
-  pointsEarned   Int                        @default(0) @map("points_earned")
-  pointsRedeemed Int                        @default(0) @map("points_redeemed")
-  notes          String?                    @db.Text
-  createdAt      DateTime                   @default(now()) @map("created_at")
-  updatedAt      DateTime                   @updatedAt @map("updated_at")
+  id             String      @id @default(uuid()) @db.Uuid
+  orderNumber    String      @unique @map("order_number") @db.VarChar(50)
+  userId         String      @map("user_id") @db.Uuid
+  status         OrderStatus @default(PENDING)
+  version        Int         @default(1)
+  subtotal       Decimal     @db.Decimal(10, 2)
+  discount       Decimal     @default(0) @db.Decimal(10, 2)
+  total          Decimal     @db.Decimal(10, 2)
+  voucherCode    String?     @map("voucher_code") @db.VarChar(50)
+  promotionId    String?     @map("promotion_id") @db.Uuid
+  pointsEarned   Int         @default(0) @map("points_earned")
+  pointsRedeemed Int         @default(0) @map("points_redeemed")
+  notes          String?     @db.Text
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
 
-  user          User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
-  promotion     Promotion?                 @relation(fields: [promotionId], references: [id], onDelete: SetNull)
-  items         OrderItem[]
-  loyaltyLogs   LoyaltyLog[]
-  reservation   OrderInventoryReservation?
-  statusHistory OrderStatusHistory[]
-  payments      Payment[]
+  user                User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  promotion           Promotion?                 @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  items               OrderItem[]
+  loyaltyTransactions LoyaltyTransaction[]
+  reservation         OrderInventoryReservation?
+  statusHistory       OrderStatusHistory[]
+  payments            Payment[]
 
   @@index([userId])
   @@index([promotionId])
@@ -273,16 +273,16 @@ model OrderItemOption {
 }
 
 model OrderInventoryReservation {
-  id        String            @id @default(uuid()) @db.Uuid
-  orderId   String            @unique @map("order_id") @db.Uuid
-  status    ReservationStatus @default(ACTIVE)
-  version   Int               @default(1)
-  createdAt DateTime          @default(now()) @map("created_at")
-  consumedAt DateTime?        @map("consumed_at")
-  releasedAt DateTime?        @map("released_at")
-  updatedAt DateTime          @updatedAt @map("updated_at")
+  id         String            @id @default(uuid()) @db.Uuid
+  orderId    String            @unique @map("order_id") @db.Uuid
+  status     ReservationStatus @default(ACTIVE)
+  version    Int               @default(1)
+  createdAt  DateTime          @default(now()) @map("created_at")
+  consumedAt DateTime?         @map("consumed_at")
+  releasedAt DateTime?         @map("released_at")
+  updatedAt  DateTime          @updatedAt @map("updated_at")
 
-  order Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
   lines OrderReservationLine[]
 
   @@index([status])
