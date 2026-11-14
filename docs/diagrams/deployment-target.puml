@@ -34,6 +34,10 @@ node "Let's Encrypt" as le {
   artifact "TLS Certificate\nAuto-renew (certbot.timer)" as cert
 }
 
+node "VNPay Sandbox" as vnpay {
+  artifact "sandbox.vnpayment.vn\nCổng thanh toán & IPN Server" as vnpay_gw
+}
+
 node "AWS EC2 Instance (47.129.101.36)\nUbuntu 26.04.1 LTS | SG: 22, 80, 443" as ec2 {
   node "Nginx Reverse Proxy" as nginx {
     artifact "Port 80 -> 301 HTTPS\nPort 443 (SSL/TLS)\n/ -> 127.0.0.1:3006\n/api -> 127.0.0.1:3005" as proxy
@@ -57,7 +61,7 @@ node "AWS EC2 Instance (47.129.101.36)\nUbuntu 26.04.1 LTS | SG: 22, 80, 443" as
     }
   }
 
-  artifact ".env (Secrets & Config)\nDATABASE_URL, JWT_SECRET,\nCORS_ORIGIN, NEXT_PUBLIC_API_URL" as secrets
+  artifact ".env (Secrets & Config)\nDATABASE_URL, JWT_SECRET, CORS_ORIGIN,\nNEXT_PUBLIC_API_URL, VNPAY_TMN_CODE,\nVNPAY_HASH_SECRET, VNPAY_*_URL" as secrets
   artifact "Docker Logs\ndocker compose logs (stdout/stderr)" as logs
 }
 
@@ -72,6 +76,9 @@ node "Môi trường Local / Deploy" as local {
 
 pwa --> internet : HTTPS 443
 pwa ..> dnsrec : DNS lookup (UDP/TCP 53)
+pwa --> vnpay_gw : HTTPS 443\n(Redirect checkoutUrl)
+vnpay_gw ..> pwa : Redirect Return\n(/api/payments/vnpay-return)
+vnpay_gw --> internet : HTTPS 443\n(IPN: GET /api/payments/vnpay-ipn)
 internet --> proxy : HTTPS 443
 cert ..> proxy : TLS cert & ACME HTTP-01 (:80)
 
