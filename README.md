@@ -16,19 +16,68 @@ Quy chuẩn làm việc và đóng góp mã nguồn của nhóm BrewLite:
 
 ---
 
+## Cấu trúc đồ án (Project Structure)
+
+Repository được tổ chức theo mô hình Monorepo (ADR-001) gồm Backend NestJS, Frontend Next.js và bộ tài liệu kỹ thuật/kiểm thử:
+
+```text
+BrewLite_swe_project_2/
+├── .github/
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── workflows/ci.yml              # Quality Gate: preflight -> backend-ci + frontend-ci -> summary
+├── apps/
+│   ├── api/                          # NestJS Backend API (Port 3005, global prefix /api)
+│   │   ├── Dockerfile
+│   │   ├── prisma/
+│   │   │   ├── schema.prisma         # PostgreSQL schema (15 models, 10 enums)
+│   │   │   ├── seed.ts               # Seed 8 sản phẩm, 15 nguyên liệu, 3 promotion, 2 tài khoản demo
+│   │   │   └── migrations/           # 14 SQL migrations
+│   │   ├── src/
+│   │   │   ├── auth/                 # Đăng ký, đăng nhập JWT/Cookie, quên/đặt lại/đổi mật khẩu, RBAC
+│   │   │   ├── products/             # Danh mục món, chi tiết món & kiểm tra tồn nguyên liệu (availability)
+│   │   │   ├── orders/               # Tạo đơn, giữ tồn kho (FOR UPDATE), state machine & Barista Queue
+│   │   │   ├── payments/             # Thanh toán VNPay Sandbox (IPN, Return), Idempotency-Key & Mock (test)
+│   │   │   ├── promotions/           # Danh sách & kiểm tra mã giảm giá
+│   │   │   ├── loyalty/              # Tích điểm, lịch sử LoyaltyTransaction & đổi điểm lấy voucher
+│   │   │   └── prisma/               # PrismaService & module kết nối DB
+│   │   └── test/                     # E2E & PostgreSQL Integration tests
+│   └── web/                          # Next.js 14 App Router Frontend (Port 3006)
+│       ├── Dockerfile
+│       └── src/
+│           ├── app/                  # Các route: /, /products, /products/[slug], /gio-hang, /checkout,
+│           │                       # /checkout/vnpay-return, /thanh-toan, /khuyen-mai, /lich-su-don-hang,
+│           │                       # /barista, /login, /register, /forgot-password, /reset-password
+│           ├── components/           # UI components (auth, cart, menu, product-detail, layout, ui)
+│           ├── services/             # API clients (auth-api, product-api, checkout-api, barista-api)
+│           ├── lib/                  # Logic giỏ hàng, tính giá, bộ lọc & helper
+│           └── types/                # TypeScript interfaces
+├── docs/
+│   ├── architecture/                 # architecture.md & ADR 001..005
+│   ├── contracts/                    # API contracts (products, availability, payments, mock)
+│   ├── diagrams/                     # Sơ đồ PlantUML (.puml) & ảnh (.png)
+│   ├── requirements/                 # SRS, context-and-scope, usecase-checkout
+│   └── testing/                      # Hướng dẫn test, acceptance records, E2E & deployment healthcheck
+├── docker-compose.yml                # Full-stack containers (postgres, migration, api, web)
+├── docker-compose.test.yml           # PostgreSQL tmpfs cô lập cho integration test (port 55432)
+└── .env.example                      # Biến môi trường mẫu cho Docker Compose
+```
+
+---
+
 ## Full Stack Deployment with Docker Compose
 
 Phần hướng dẫn này dành cho Giảng viên, Reviewer và thành viên nhóm để thiết lập và vận hành toàn bộ hệ thống BrewLite (Next.js Frontend + NestJS Backend API + PostgreSQL + Prisma Auto Migration) trong môi trường Docker hóa đồng nhất.
 
 ### 1. Kiến trúc triển khai tổng thể
 
-Toàn bộ hệ thống được container hóa theo mô hình micro-services phối hợp trên cùng mạng nội bộ Docker bridge:
+Toàn bộ hệ thống được container hóa phối hợp trên cùng mạng nội bộ Docker bridge:
 
 ```mermaid
 flowchart TD
-    subgraph Host["Host Machine / User Environment"]
-        Browser["Web Browser (User Client)"]
+    subgraph Host["Host Machine / External"]
+        Browser["Web Browser (Client CSR)"]
         DevOps["DevOps / CLI (docker compose)"]
+        VNPay["VNPay Sandbox\n(External Payment Gateway)"]
     end
 
     subgraph DockerNet["Docker Network: brewlite_swe_project_2_default"]
@@ -43,28 +92,29 @@ flowchart TD
         end
 
         subgraph APIContainer["Container: brewlite-api"]
-            NestAPI["NestJS Backend API (Port 3005)\n- Products Module\n- Auth Module (JWT + RBAC)\n- Prisma Client"]
+            NestAPI["NestJS Backend API (Port 3005 /api)\n- AuthModule (JWT/Cookie + RBAC)\n- ProductsModule (Catalog & Availability)\n- OrdersModule (Orders, Inventory & Barista)\n- PaymentsModule (VNPay Sandbox & Idempotency)\n- PromotionsModule & LoyaltyModule\n- PrismaModule"]
         end
 
         subgraph WebContainer["Container: brewlite-web"]
-            NextServer["Next.js Node Server (Port 3006)\n- Server Components\n- SSR Engine"]
+            NextServer["Next.js Node Server (Port 3006)\n- App Router Pages & Static/CSR Bundles"]
         end
     end
 
-    %% Dependency flow
+    %% Startup dependency flow
     PostgresContainer -- "1. Healthcheck: pg_isready" --> MigrationContainer
-    MigrationContainer -- "2. Schema Applied (Completed 0)" --> APIContainer
-    APIContainer -- "3. Healthcheck: /api/products" --> WebContainer
+    MigrationContainer -- "2. Schema Applied (Exit 0)" --> APIContainer
+    APIContainer -- "3. Healthcheck: GET /api/products" --> WebContainer
 
     %% Runtime network traffic
     Migrate -. "TCP: postgres:5432" .-> PG
     NestAPI -. "DATABASE_URL: postgres:5432" .-> PG
-    NextServer -. "SSR Fetch (nội bộ)" .-> NestAPI
 
-    %% External Host exposure
+    %% External Host & Payment Gateway exposure
     DevOps ==>|docker compose up| DockerNet
     Browser ==>|HTTP: localhost:3006| NextServer
-    Browser ==>|HTTP: localhost:3005/api| NestAPI
+    Browser ==>|REST JSON + Bearer/Cookie\nNEXT_PUBLIC_API_URL: localhost:3005/api| NestAPI
+    Browser -. "Redirect checkoutUrl / Return URL" .-> VNPay
+    VNPay -. "IPN: GET /api/payments/vnpay-ipn\n(Public HTTPS / Tunnel)" .-> NestAPI
 ```
 
 ### 2. Yêu cầu môi trường tiên quyết
@@ -164,14 +214,19 @@ docker compose logs migration
 ### 8. Địa chỉ truy cập các dịch vụ
 Sau khi các container ở trạng thái `healthy` hoặc `running`:
 - **Giao diện người dùng Web (Next.js):** [http://localhost:3006](http://localhost:3006)
-  - Trang Thực đơn: [http://localhost:3006/products](http://localhost:3006/products)
-  - Trang Đăng nhập: [http://localhost:3006/login](http://localhost:3006/login)
-  - Trang Đăng ký: [http://localhost:3006/register](http://localhost:3006/register)
-  - Trang Thanh toán: [http://localhost:3006/thanh-toan](http://localhost:3006/thanh-toan)
-  - Quầy Barista Dashboard: [http://localhost:3006/barista](http://localhost:3006/barista) *(yêu cầu đăng nhập tài khoản Barista)*
+  - Trang Thực đơn & Chi tiết món: [http://localhost:3006/products](http://localhost:3006/products), `/products/<UUID>`
+  - Giỏ hàng: [http://localhost:3006/gio-hang](http://localhost:3006/gio-hang)
+  - Thanh toán & Nhận kết quả VNPay: [http://localhost:3006/checkout](http://localhost:3006/checkout) (alias: `/thanh-toan`), `/checkout/vnpay-return`
+  - Khuyến mãi & Điểm thưởng Loyalty: [http://localhost:3006/khuyen-mai](http://localhost:3006/khuyen-mai)
+  - Lịch sử đơn hàng: [http://localhost:3006/lich-su-don-hang](http://localhost:3006/lich-su-don-hang)
+  - Tài khoản: [http://localhost:3006/login](http://localhost:3006/login), `/register`, `/forgot-password`, `/reset-password`
+  - Quầy Barista Dashboard: [http://localhost:3006/barista](http://localhost:3006/barista) *(yêu cầu tài khoản `BARISTA` hoặc `MANAGER`)*
 - **Backend API (NestJS):** [http://localhost:3005/api](http://localhost:3005/api)
-  - Danh sách sản phẩm: `GET http://localhost:3005/api/products`
-  - Đăng nhập API: `POST http://localhost:3005/api/auth/login`
+  - Products & Availability: `GET /api/products`, `GET /api/products/:id`, `POST /api/products/availability`
+  - Auth: `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password`, `POST /api/auth/change-password`
+  - Orders & Barista: `POST /api/orders`, `GET /api/orders/me`, `GET /api/orders/:id`, `GET /api/barista/orders`, `POST /api/barista/orders/:id/{accept,ready,complete}`
+  - Payments (VNPay Sandbox): `POST /api/payments`, `GET /api/payments/:paymentId`, `GET /api/payments/vnpay-return`, `GET /api/payments/vnpay-ipn`
+  - Promotions & Loyalty: `GET/POST /api/promotions`, `POST /api/promotions/validate`, `GET /api/loyalty/user/:userId`, `POST /api/loyalty/earn`, `POST /api/loyalty/redeem`
 - **Cơ sở dữ liệu PostgreSQL:** `localhost:5432` (hoặc cổng cấu hình tại `POSTGRES_PORT`).
 
 ### 9. Quy trình dừng và dọn dẹp an toàn
@@ -234,7 +289,7 @@ Một trong những lỗi phổ biến nhất khi triển khai full-stack với 
    - Container `api` và `migration` kết nối với `postgres` qua hostname dịch vụ nội bộ: `postgres:5432`.
    - Trong mạng Docker, `localhost` chỉ đại diện cho chính container cục bộ đó. Nếu cấu hình API kết nối tới `localhost:5432`, kết nối sẽ bị từ chối (`ECONNREFUSED`).
 2. **Giao tiếp ngoài máy host (Client Browser to API):**
-   - Giao diện Next.js sử dụng kỹ thuật Client-side Rendering (CSR) và React Hooks (`useEffect`, `fetch`, `axios`). Các lệnh gọi API này được thực thi bởi trình duyệt web trên máy tính của người dùng bên ngoài Docker.
+   - Giao diện Next.js sử dụng Client-side Rendering (CSR) và `fetch` API (`apps/web/src/services/*`). Các request API này được thực thi bởi trình duyệt web trên máy người dùng bên ngoài Docker.
    - Trình duyệt **không nằm trong Docker network** nên hoàn toàn không thể phân giải hostname `http://api:3005`.
    - Do đó, `NEXT_PUBLIC_API_URL` bắt buộc phải trỏ về `http://localhost:3005/api` (hoặc IP/domain public của máy chủ host).
    - Biến `NEXT_PUBLIC_*` được nhúng trực tiếp vào mã nguồn JavaScript tại thời điểm đóng gói image (`docker build`), vì vậy Dockerfile `apps/web/Dockerfile` tiếp nhận giá trị này qua `ARG NEXT_PUBLIC_API_URL`.
@@ -251,33 +306,28 @@ Một trong những lỗi phổ biến nhất khi triển khai full-stack với 
 
 ---
 
-## Hướng dẫn thiết lập và khởi chạy Clean Setup (Sprint 1 MVP)
+## Hướng dẫn thiết lập và khởi chạy Local (Clean Setup)
 
-### Tích hợp Products API trên giao diện
+Hướng dẫn này dành cho thành viên mới clone repository hoặc kiểm tra nghiệm thu độc lập khi chỉ chạy PostgreSQL bằng Docker và chạy `apps/api`, `apps/web` trực tiếp bằng Node.js.
 
-- `/products` lấy danh sách từ `GET /api/products`, hỗ trợ tìm tên không dấu và sắp xếp giá trên danh sách đã tải.
-- `/products/<UUID>` lấy chi tiết từ `GET /api/products/:id`; các liên kết từ thực đơn sử dụng ID backend.
-- Tên, ảnh, giá, trạng thái đặt món, tồn kho và size/topping đều lấy từ backend. Không tự chuyển sang `MOCK_PRODUCTS` khi API lỗi; giao diện hiển thị lỗi và nút thử lại.
-- API hiện chưa có danh mục, mô tả, đánh giá hoặc doanh số; các trang này chưa hiển thị những trường đó.
-- Giỏ hàng lưu UUID sản phẩm, UUID tùy chọn và snapshot phụ thu từ API để tính lại giá khi đổi size. Snapshot chỉ phục vụ hiển thị; Orders API sau này vẫn phải kiểm tra tồn kho và tính lại giá.
-- Các URL chi tiết theo tên món từ bản mock cũ không còn được dùng. Giỏ cũ trong trình duyệt vẫn được giữ; khi kiểm tra luồng API nên xóa các món mẫu cũ và chọn lại từ thực đơn.
-- Cần chạy và seed backend trước, đồng thời đặt `NEXT_PUBLIC_API_URL` theo `apps/web/.env.example`. Nếu dùng Docker, đổi biến này cần build lại web.
+### Tóm tắt tích hợp luồng chính trên giao diện
 
-Kiểm thử tích hợp trang với API giả lập: `apps/web/src/components/__tests__/LiveProducts.test.tsx`.
-
-Hướng dẫn này dành cho thành viên mới clone repository hoặc kiểm tra nghiệm thu độc lập trên môi trường sạch không sử dụng Docker cho toàn bộ web/API.
+- **Thực đơn & Tồn kho:** `/products` lấy danh sách từ `GET /api/products`; `/products/<UUID>` lấy chi tiết từ `GET /api/products/:id` và kiểm tra tồn nguyên liệu theo định lượng qua `POST /api/products/availability`. Không tự chuyển sang dữ liệu mock khi API lỗi.
+- **Giỏ hàng & Khuyến mãi / Loyalty:** `/gio-hang` tái kiểm tra tồn kho (`POST /api/products/availability`), áp dụng mã giảm giá (`POST /api/promotions/validate`), và `/khuyen-mai` hỗ trợ xem ưu đãi & đổi điểm (`GET /api/loyalty/user/:userId`, `POST /api/loyalty/redeem`).
+- **Đặt hàng & Thanh toán VNPay Sandbox:** `/checkout` (và `/thanh-toan`) yêu cầu đăng nhập, gọi `POST /api/orders` (tính lại giá, trừ tồn kho và giữ chỗ reservation ở server) rồi gọi `POST /api/payments` (`method: "VNPAY"`, `Idempotency-Key`) để nhận `checkoutUrl` chuyển sang VNPay Sandbox. Kết quả được ghi nhận qua `GET /api/payments/vnpay-ipn` và hiển thị bằng polling `GET /api/payments/:paymentId` tại `/checkout/vnpay-return`. *(Lưu ý: `MockPaymentGatewayAdapter` chỉ kích hoạt khi `NODE_ENV=test` phục vụ kiểm thử tự động).*
+- **Barista & Lịch sử:** `/lich-su-don-hang` đọc `GET /api/orders/me` và `/barista` vận hành hàng đợi `PAID -> PREPARING -> READY -> COMPLETED`.
 
 ### 1. Yêu cầu tiên quyết
 - **Node.js**: Phiên bản 20+ hoặc 22+
 - **Docker & Docker Compose**: Đang chạy trên máy
 
 ### 2. Thiết lập biến môi trường (Environment Configuration)
-Repository cung cấp các file mẫu cấu hình tách biệt theo từng thành phần (consumer-specific template):
+Repository cung cấp các file mẫu cấu hình tách biệt theo từng thành phần:
 ```bash
-# 1. Cấu hình container PostgreSQL local (tại thư mục gốc)
+# 1. Cấu hình Docker Compose / PostgreSQL local (tại thư mục gốc)
 cp .env.example .env
 
-# 2. Cấu hình NestJS API và Prisma CLI
+# 2. Cấu hình NestJS API và Prisma CLI (bao gồm các biến VNPAY_*)
 cp apps/api/.env.example apps/api/.env
 
 # 3. Cấu hình Next.js Web frontend
@@ -301,8 +351,8 @@ npx prisma generate
 npx prisma migrate deploy
 npx prisma db seed
 ```
-- `npx prisma migrate deploy`: Áp dụng lịch sử migration đã có (`20261030173126_init_product_schema`, `20261031040439_add_product_option_index_and_inventory_constraints`, `20261103221500_add_user_and_auth_schema`) vào database sạch mà không cần reset dữ liệu.
-- `npx prisma db seed`: Nạp sẵn sản phẩm mẫu, danh mục kích cỡ/topping, định mức tồn kho và tài khoản demo.
+- `npx prisma migrate deploy`: Áp dụng toàn bộ lịch sử 14 migration trong `apps/api/prisma/migrations/` (từ Product, Auth, Ingredient/OptionRecipe, Promotion, LoyaltyTransaction, Order/Reservation đến Payment/VNPay Sandbox) vào database sạch mà không cần reset dữ liệu.
+- `npx prisma db seed`: Nạp sẵn 8 sản phẩm mẫu, 15 nguyên liệu + công thức, 3 mã khuyến mãi (`HELLOBREW`, `BREW20`, `EXPIRED10`) và 2 tài khoản demo (`customer@brewlite.test`, `barista@brewlite.test`).
 
 ### 5. Khởi chạy Backend API
 Sau khi hoàn thành bước 4 (vẫn ở trong `apps/api`):
@@ -319,18 +369,24 @@ cd apps/web
 npm ci
 npm run dev
 ```
-Giao diện thực đơn web sẽ chạy tại: `http://localhost:3006`.
-Giao diện tối ưu Mobile-First (chuẩn từ 360px) và hỗ trợ đầy đủ 4 trạng thái: Loading Skeleton, Empty, Error và Retry phục hồi khi gọi live API.
+Giao diện web sẽ chạy tại: `http://localhost:3006`.
 
 ### 7. Thực thi kiểm thử (Testing)
 - **Backend Unit Tests:** `cd apps/api && npm test`
-- **Backend PostgreSQL Integration/E2E:** dùng database test riêng theo [hướng dẫn Task 4](docs/testing/task4-kiet-test-guide.md), sau đó chạy `npm run test:integration` hoặc `npm run test:e2e -- --runInBand`
+- **Backend PostgreSQL Integration/E2E:** dùng database test riêng (`docker compose -f docker-compose.test.yml up -d` hoặc theo [hướng dẫn Task 4](docs/testing/task4-kiet-test-guide.md)), sau đó chạy `npm run test:integration` hoặc `npm run test:e2e -- --runInBand`
 - **Frontend Component & API Tests:** `cd apps/web && npm test`
+- **Typecheck & Lint:**
+  - Backend: `cd apps/api && npm run lint`
+  - Frontend: `cd apps/web && npm run lint && npx tsc --noEmit`
 - **Biên dịch Production (Build):**
   - Backend: `cd apps/api && npm run build`
   - Frontend: `cd apps/web && npm run build`
 
-Chi tiết kiểm thử và nghiệm thu phần Task 4 của Nguyễn Tuấn Kiệt:
-
-- [Hướng dẫn chạy test](docs/testing/task4-kiet-test-guide.md)
-- [Biên bản nghiệm thu và bằng chứng](docs/testing/task4-kiet-acceptance.md)
+### Tài liệu tham khảo & Kiểm thử liên quan
+- [API Contract — VNPay Sandbox](docs/contracts/payments-api.md)
+- [Hướng dẫn chạy test Task 4](docs/testing/task4-kiet-test-guide.md)
+- [Biên bản nghiệm thu Task 4](docs/testing/task4-kiet-acceptance.md)
+- [Biên bản nghiệm thu Payment Task 5](docs/testing/task5-kiet-payment-acceptance.md)
+- [Báo cáo kiểm thử E2E](docs/testing/e2e-report.md)
+- [Kiểm tra triển khai & Healthcheck Production](docs/testing/deployment-healthcheck.md)
+- [Release Notes](docs/RELEASE_NOTES.md) & [Sprint Retrospective](docs/SPRINT_RETROSPECTIVE.md)
