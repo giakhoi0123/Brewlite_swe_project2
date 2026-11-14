@@ -39,13 +39,14 @@ export async function fetchProductsFromApi(
   search?: string,
   signal?: AbortSignal,
 ): Promise<Product[]> {
-  const url = new URL(`${API_BASE_URL}/products`);
-  if (search && search.trim()) {
-    url.searchParams.set('search', search.trim());
-  }
+  const query =
+    search && search.trim()
+      ? `?${new URLSearchParams({ search: search.trim() }).toString()}`
+      : '';
+  const url = `${API_BASE_URL}/products${query}`;
 
   try {
-    const response = await fetch(url.toString(), {
+    const response = await fetch(url, {
       cache: 'no-store',
       signal,
       headers: {

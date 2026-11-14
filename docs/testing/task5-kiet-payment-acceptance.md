@@ -1,6 +1,6 @@
 # Task 5 — Nguyễn Tuấn Kiệt payment acceptance record
 
-Ngày kiểm tra local gần nhất: 2026-11-12.
+Ngày kiểm tra và đồng bộ gần nhất: 2026-11-14.
 
 ## Phạm vi theo Assignment
 
@@ -14,9 +14,9 @@ Ngày kiểm tra local gần nhất: 2026-11-12.
 | Chặn thanh toán trùng | Partial unique index chỉ cho tối đa một Payment `PAID` trên mỗi order; key mới trên order đã trả tiền nhận `ORDER_ALREADY_PAID`. |
 | JWT và ownership | Endpoint có payment-specific JWT error contract và kiểm tra chủ sở hữu order trước khi gọi gateway. |
 
-## Kết quả quality gate local
+## Kết quả quality gate (Local & CI PostgreSQL 16)
 
-Chạy từ `apps/api` với PostgreSQL test riêng `brewlite_test`:
+Chạy từ `apps/api` và `apps/web` (kết hợp container `postgres:16-alpine` cô lập):
 
 ```powershell
 npm.cmd run lint
@@ -26,17 +26,16 @@ npm.cmd run test:e2e -- --runInBand
 npm.cmd run build
 ```
 
-Kết quả:
+Kết quả đã xác minh:
 
-- Prisma schema hợp lệ; migration VNPay mới đã được sinh nhưng chưa chạy lại trên PostgreSQL local
-  trong lần cập nhật này vì Docker daemon không hoạt động.
-- Unit/service backend: 20 suites, 312 tests passed; lint và Nest build passed.
-- PostgreSQL Payment integration trước đó: 1 suite, 4 tests passed trên database cô lập; cần chạy
-  lại sau khi bật Docker để áp dụng migration VNPay.
-- Payment integration xác nhận concurrent same-key chỉ gọi gateway một lần; PAID consume
-  reservation; FAILED hoàn stock đúng một lần; retry tái giữ kho; TIMEOUT giữ reservation ACTIVE.
-- ESLint: passed.
-- Frontend: 19 suites, 139 tests passed; typecheck và Next.js production build passed.
+- **Prisma schema & migrations:** Toàn bộ 14 migrations (bao gồm `20261111160000_harden_payment_attempts`, `20261112103000_add_vnpay_sandbox`, `20261112144000_backfill_vnpay_transaction_date`, `20261113030000_rename_loyalty_log_to_loyalty_transaction`) và deterministic seed đã chạy thành công trên PostgreSQL 16.
+- **Unit/service backend:** 20 suites, 310 tests passed; ESLint và NestJS production build passed.
+- **PostgreSQL Payment integration (`payments-integration.e2e-spec.ts`):** PASS trên PostgreSQL 16 cô lập — xác nhận thiếu JWT trả `401 AUTHENTICATION_REQUIRED` trước khi gọi gateway; concurrent same-key chỉ tạo 1 row Payment và gọi gateway đúng 1 lần; `PAID` consume reservation (`ACTIVE -> CONSUMED`); `FAILED` hoàn stock đúng 1 lần (`ACTIVE -> RELEASED`); retry với key mới tái giữ kho (`RELEASED -> ACTIVE`) và chuyển `PAYMENT_FAILED -> PENDING -> PAID`; `TIMEOUT` giữ reservation `ACTIVE` và chặn key khác bằng `409 ORDER_NOT_PAYABLE`.
+- **Frontend:** 19 suites, 139 tests passed; ESLint, TypeScript typecheck (`tsc --noEmit`) và Next.js production build passed.
+- **Minh chứng GitHub Actions CI (PostgreSQL 16 service container):**
+  - PR [#41](https://github.com/giakhoi0123/Brewlite_swe_project2/pull/41) (`feature/task5-kiet-payment-completion`, commit `8d4713f`): [CI Run #63](https://github.com/giakhoi0123/Brewlite_swe_project2/actions/runs/43445487051) — PASS cả 4 jobs (`Preflight Inspection`, `Backend Quality Gate` [job 131953885126](https://github.com/giakhoi0123/Brewlite_swe_project2/actions/runs/43445487051/job/131953885126) gồm migrate/seed/integration, `Frontend Quality Gate`, `Quality Gate Summary`).
+  - Merge vào `main` (commit `ee0dc60`): [CI Run #64](https://github.com/giakhoi0123/Brewlite_swe_project2/actions/runs/43447327273) — PASS.
+  - Nhánh `main` hiện hành (commit `d14371f`): [CI Run #70](https://github.com/giakhoi0123/Brewlite_swe_project2/actions/runs/43575888226) — PASS.
 
 Test trọng tâm nằm tại:
 
@@ -44,6 +43,8 @@ Test trọng tâm nằm tại:
 - `apps/api/src/payments/adapters/mock-payment-gateway.adapter.spec.ts` (test-only)
 - `apps/api/src/payments/payments.service.spec.ts`
 - `apps/api/test/payments-integration.e2e-spec.ts`
+- `apps/web/src/app/checkout/__tests__/CheckoutPage.test.tsx`
+- `apps/web/src/services/__tests__/checkout-api.test.ts`
 
 ## Ghi chú ranh giới module
 
