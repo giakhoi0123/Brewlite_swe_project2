@@ -1,0 +1,435 @@
+{
+  "info": {
+    "name": "BrewLite - Menu & Availability BE Test Suite (Dong)",
+    "_postman_id": "a7b1c2d3-1111-4444-8888-000000000001",
+    "description": "Bo test Postman cho module Menu, Product Detail & Availability (FR-01, FR-02). Chay theo thu tu tu 01 den 10 hoac dung Collection Runner.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3005/api"
+    },
+    {
+      "key": "sampleProductId",
+      "value": "a0000000-0000-0000-0000-000000000001"
+    },
+    {
+      "key": "sampleSizeId",
+      "value": "b0000000-0000-0000-0000-000000000001"
+    },
+    {
+      "key": "sampleToppingId",
+      "value": "b0000000-0000-0000-0000-000000000003"
+    },
+    {
+      "key": "outOfStockProductId",
+      "value": "a0000000-0000-0000-0000-000000000007"
+    },
+    {
+      "key": "outOfStockSizeId",
+      "value": "b0000000-0000-0000-0000-000000000020"
+    }
+  ],
+  "item": [
+    {
+      "name": "01. Get Products - Danh sach toan bo menu (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Returns non-empty product list with orderability fields', () => {",
+              "  pm.expect(json).to.be.an('array').that.is.not.empty;",
+              "  pm.expect(json.length).to.be.at.least(8);",
+              "  const first = json[0];",
+              "  pm.expect(first).to.have.all.keys('id', 'name', 'basePrice', 'imageUrl', 'isAvailable', 'canOrder', 'createdAt');",
+              "  pm.expect(first.basePrice).to.be.a('number');",
+              "});",
+              "const availableItem = json.find((p) => p.id === 'a0000000-0000-0000-0000-000000000001') || json[0];",
+              "pm.collectionVariables.set('sampleProductId', availableItem.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/products",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "02. Search Products - Tim khong phan biet hoa thuong (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Filters products matching search term case-insensitively', () => {",
+              "  pm.expect(json).to.be.an('array').that.is.not.empty;",
+              "  json.forEach((item) => {",
+              "    pm.expect(item.name.toLowerCase()).to.include('cà phê');",
+              "  });",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/products?search=CÀ PHÊ",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products"
+          ],
+          "query": [
+            {
+              "key": "search",
+              "value": "CÀ PHÊ"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "03. Search Products - Khong khop tra mang rong (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Returns empty array when no product matches', () => {",
+              "  pm.expect(json).to.be.an('array').that.is.empty;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/products?search=mon-khong-ton-tai-xyz",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products"
+          ],
+          "query": [
+            {
+              "key": "search",
+              "value": "mon-khong-ton-tai-xyz"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "04. Get Product Detail - Mon co options Size & Topping (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Returns product detail with SIZE and TOPPING options', () => {",
+              "  pm.expect(json.id).to.eql(pm.collectionVariables.get('sampleProductId'));",
+              "  pm.expect(json.options).to.be.an('array').that.is.not.empty;",
+              "  const size = json.options.find((o) => o.type === 'SIZE');",
+              "  const topping = json.options.find((o) => o.type === 'TOPPING');",
+              "  pm.expect(size).to.be.an('object');",
+              "  pm.collectionVariables.set('sampleSizeId', size.id);",
+              "  if (topping) pm.collectionVariables.set('sampleToppingId', topping.id);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/products/{{sampleProductId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products",
+            "{{sampleProductId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "05. Get Product Detail - Sai dinh dang UUID (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 400 Bad Request', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/products/not-a-valid-uuid",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products",
+            "not-a-valid-uuid"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "06. Get Product Detail - Khong ton tai (404)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 404 Not Found', () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/products/00000000-0000-4000-8000-000000000999",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products",
+            "00000000-0000-4000-8000-000000000999"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "07. Check Availability - Gio hang hop le du nguyen lieu (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.test('Cart line is orderable with availableQuantity >= 2', () => {",
+              "  pm.expect(json.canOrder).to.eql(true);",
+              "  pm.expect(json.items).to.be.an('array').with.lengthOf(1);",
+              "  pm.expect(json.items[0].canOrder).to.eql(true);",
+              "  pm.expect(json.items[0].availableQuantity).to.be.at.least(2);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"{{sampleProductId}}\",\n      \"sizeId\": \"{{sampleSizeId}}\",\n      \"toppingIds\": [\n        \"{{sampleToppingId}}\"\n      ],\n      \"quantity\": 2\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/products/availability",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products",
+            "availability"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "08. Check Availability - Mon het hang tra canOrder false (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.test('Out-of-stock item returns canOrder false and availableQuantity 0', () => {",
+              "  pm.expect(json.canOrder).to.eql(false);",
+              "  pm.expect(json.items[0].canOrder).to.eql(false);",
+              "  pm.expect(json.items[0].availableQuantity).to.eql(0);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"{{outOfStockProductId}}\",\n      \"sizeId\": \"{{outOfStockSizeId}}\",\n      \"toppingIds\": [],\n      \"quantity\": 1\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/products/availability",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products",
+            "availability"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "09. Check Availability - Option khong thuoc san pham (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 400 Bad Request', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000001\",\n      \"sizeId\": \"b0000000-0000-0000-0000-000000000005\",\n      \"toppingIds\": [],\n      \"quantity\": 1\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/products/availability",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products",
+            "availability"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "10. Check Availability - So luong vuot qua 99 hoac sai DTO (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 400 Bad Request', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"{{sampleProductId}}\",\n      \"sizeId\": \"{{sampleSizeId}}\",\n      \"toppingIds\": [],\n      \"quantity\": 100\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/products/availability",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products",
+            "availability"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

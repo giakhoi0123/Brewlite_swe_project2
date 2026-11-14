@@ -1,0 +1,952 @@
+{
+  "info": {
+    "name": "BrewLite - Orders, Inventory & Barista BE Test Suite (Diep)",
+    "_postman_id": "a7b1c2d3-2222-4444-8888-000000000002",
+    "description": "Bo test Postman cho module Orders, Inventory Reservation & Barista Queue/Workflow (FR-04, FR-07, FR-10). Su dung tai khoan seed customer@brewlite.test va barista@brewlite.test. De tu dong thanh toan don PENDING qua VNPay IPN truoc khi test Barista accept/ready/complete, dien VNPAY_HASH_SECRET vao bien collection vnpayHashSecret.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3005/api"
+    },
+    {
+      "key": "customerToken",
+      "value": ""
+    },
+    {
+      "key": "baristaToken",
+      "value": ""
+    },
+    {
+      "key": "pendingOrderId",
+      "value": ""
+    },
+    {
+      "key": "paidOrderId",
+      "value": ""
+    },
+    {
+      "key": "vnpayTmnCode",
+      "value": ""
+    },
+    {
+      "key": "vnpayTxnRef",
+      "value": ""
+    },
+    {
+      "key": "vnpayAmount",
+      "value": ""
+    },
+    {
+      "key": "vnpayHashSecret",
+      "value": "",
+      "description": "Dien VNPAY_HASH_SECRET tu .env local neu muon buoc 12b ky IPN that de chuyen don sang PAID."
+    },
+    {
+      "key": "vnpOrderInfo",
+      "value": ""
+    },
+    {
+      "key": "vnpPayDate",
+      "value": "20261115003000"
+    },
+    {
+      "key": "vnpTransactionNo",
+      "value": ""
+    },
+    {
+      "key": "vnpSecureHash",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "01. Login Customer seed account (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Customer JWT obtained', () => {",
+              "  pm.expect(json.accessToken).to.be.a('string').and.not.empty;",
+              "  pm.expect(json.user.role).to.eql('CUSTOMER');",
+              "});",
+              "pm.collectionVariables.set('customerToken', json.accessToken);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"customer@brewlite.test\",\n  \"password\": \"Password123!\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "login"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "02. Login Barista seed account (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Barista JWT obtained', () => {",
+              "  pm.expect(json.accessToken).to.be.a('string').and.not.empty;",
+              "  pm.expect(['BARISTA', 'MANAGER']).to.include(json.user.role);",
+              "});",
+              "pm.collectionVariables.set('baristaToken', json.accessToken);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"barista@brewlite.test\",\n  \"password\": \"Password123!\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "login"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "03. Create Order - Khong co JWT (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000001\",\n      \"quantity\": 1,\n      \"selectedOptions\": [\n        \"b0000000-0000-0000-0000-000000000001\"\n      ]\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "04. Create Order - Voucher het han EXPIRED10 (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 400 Bad Request', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000001\",\n      \"quantity\": 1,\n      \"selectedOptions\": [\n        \"b0000000-0000-0000-0000-000000000001\"\n      ]\n    }\n  ],\n  \"voucherCode\": \"EXPIRED10\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "05. Create Order - Mon tam ngung phuc vu (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 400 Bad Request', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000007\",\n      \"quantity\": 1,\n      \"selectedOptions\": [\n        \"b0000000-0000-0000-0000-000000000020\"\n      ]\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "06. Create Order - Thieu ton nguyen lieu rollback (409)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 409 Conflict (INVENTORY_CONFLICT)', () => pm.response.to.have.status(409));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000004\",\n      \"quantity\": 125,\n      \"selectedOptions\": [\n        \"b0000000-0000-0000-0000-000000000010\",\n        \"b0000000-0000-0000-0000-000000000012\"\n      ]\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "07. Create Order - Thanh cong tao don PENDING giu kho & tinh lai gia (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.test('Server calculates price (29000 + 5000 = 34000) and sets PENDING', () => {",
+              "  pm.expect(json.id).to.be.a('string').and.not.empty;",
+              "  pm.expect(json.orderNumber).to.be.a('string').and.not.empty;",
+              "  pm.expect(json.status).to.eql('PENDING');",
+              "  pm.expect(json.subtotal).to.eql(34000);",
+              "  pm.expect(json.total).to.eql(34000);",
+              "});",
+              "pm.collectionVariables.set('pendingOrderId', json.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000002\",\n      \"quantity\": 1,\n      \"selectedOptions\": [\n        \"b0000000-0000-0000-0000-000000000004\",\n        \"b0000000-0000-0000-0000-000000000006\"\n      ],\n      \"notes\": \"It da, it ngot\"\n    }\n  ],\n  \"notes\": \"Test don hang Diep\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "08. Barista Queue - Customer truy cap bi chan RBAC (403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 403 Forbidden for CUSTOMER', () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/barista/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "barista",
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "09. Barista Queue - Khong co JWT (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/barista/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "barista",
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "10. Barista Queue - Barista xem hang doi loai tru PENDING (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Queue has data/meta and excludes PENDING orders', () => {",
+              "  pm.expect(json.data).to.be.an('array');",
+              "  pm.expect(json.meta).to.have.all.keys('total', 'page', 'limit', 'totalPages');",
+              "  const pendingId = pm.collectionVariables.get('pendingOrderId');",
+              "  const foundPending = json.data.find((o) => o.id === pendingId);",
+              "  pm.expect(foundPending).to.be.undefined;",
+              "  json.data.forEach((o) => {",
+              "    pm.expect(['PAID', 'PREPARING', 'READY']).to.include(o.status);",
+              "  });",
+              "});",
+              "const firstPaid = json.data.find((o) => o.status === 'PAID');",
+              "if (firstPaid) pm.collectionVariables.set('paidOrderId', firstPaid.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{baristaToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/barista/orders?page=1&limit=20",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "barista",
+            "orders"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "20"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "11. Barista Accept - Tu choi don chua thanh toan PENDING (409)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 409 Conflict when accepting PENDING order', () => pm.response.to.have.status(409));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{baristaToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/barista/orders/{{pendingOrderId}}/accept",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "barista",
+            "orders",
+            "{{pendingOrderId}}",
+            "accept"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "12a. Helper - Khoi tao VNPay cho pendingOrderId (202)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('helperIdempotencyKey', pm.variables.replaceIn('{{$guid}}'));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 202 Accepted', () => pm.response.to.have.status(202));",
+              "const json = pm.response.json();",
+              "if (json.checkoutUrl) {",
+              "  const query = json.checkoutUrl.split('?')[1] || '';",
+              "  query.split('&').forEach((pair) => {",
+              "    const [k, v] = pair.split('=');",
+              "    if (k === 'vnp_TmnCode') pm.collectionVariables.set('vnpayTmnCode', decodeURIComponent(v || ''));",
+              "    if (k === 'vnp_TxnRef') pm.collectionVariables.set('vnpayTxnRef', decodeURIComponent(v || ''));",
+              "    if (k === 'vnp_Amount') pm.collectionVariables.set('vnpayAmount', decodeURIComponent(v || ''));",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{helperIdempotencyKey}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{pendingOrderId}}\",\n  \"method\": \"VNPAY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "12b. Helper - Ky VNPay IPN thanh cong neu co vnpayHashSecret (200)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const secret = pm.collectionVariables.get('vnpayHashSecret') || '';",
+              "const orderInfo = `Thanh toan don hang ${pm.collectionVariables.get('pendingOrderId')}`;",
+              "const payDate = '20261115003000';",
+              "const txnNo = `${Date.now()}`.slice(-8);",
+              "pm.collectionVariables.set('vnpOrderInfo', orderInfo);",
+              "pm.collectionVariables.set('vnpPayDate', payDate);",
+              "pm.collectionVariables.set('vnpTransactionNo', txnNo);",
+              "const params = {",
+              "  vnp_Amount: pm.collectionVariables.get('vnpayAmount') || '3400000',",
+              "  vnp_BankCode: 'NCB',",
+              "  vnp_OrderInfo: orderInfo,",
+              "  vnp_PayDate: payDate,",
+              "  vnp_ResponseCode: '00',",
+              "  vnp_TmnCode: pm.collectionVariables.get('vnpayTmnCode') || 'UNSET',",
+              "  vnp_TransactionNo: txnNo,",
+              "  vnp_TransactionStatus: '00',",
+              "  vnp_TxnRef: pm.collectionVariables.get('vnpayTxnRef') || '0000'",
+              "};",
+              "const sortedKeys = Object.keys(params).sort();",
+              "const query = sortedKeys.map((k) => `${k}=${encodeURIComponent(params[k]).replace(/%20/g, '+')}`).join('&');",
+              "const hash = secret ? CryptoJS.HmacSHA512(query, secret).toString(CryptoJS.enc.Hex) : 'missing-secret';",
+              "pm.collectionVariables.set('vnpSecureHash', hash);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('IPN endpoint returns HTTP 200', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "if (pm.collectionVariables.get('vnpayHashSecret')) {",
+              "  pm.test('Order marked PAID via signed IPN (RspCode 00)', () => pm.expect(json.RspCode).to.eql('00'));",
+              "  pm.collectionVariables.set('paidOrderId', pm.collectionVariables.get('pendingOrderId'));",
+              "} else {",
+              "  pm.test('Without vnpayHashSecret, IPN safely rejects checksum (RspCode 97)', () => pm.expect(json.RspCode).to.eql('97'));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/payments/vnpay-ipn?vnp_Amount={{vnpayAmount}}&vnp_BankCode=NCB&vnp_OrderInfo={{vnpOrderInfo}}&vnp_PayDate={{vnpPayDate}}&vnp_ResponseCode=00&vnp_TmnCode={{vnpayTmnCode}}&vnp_TransactionNo={{vnpTransactionNo}}&vnp_TransactionStatus=00&vnp_TxnRef={{vnpayTxnRef}}&vnp_SecureHash={{vnpSecureHash}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments",
+            "vnpay-ipn"
+          ],
+          "query": [
+            {
+              "key": "vnp_Amount",
+              "value": "{{vnpayAmount}}"
+            },
+            {
+              "key": "vnp_BankCode",
+              "value": "NCB"
+            },
+            {
+              "key": "vnp_OrderInfo",
+              "value": "{{vnpOrderInfo}}"
+            },
+            {
+              "key": "vnp_PayDate",
+              "value": "{{vnpPayDate}}"
+            },
+            {
+              "key": "vnp_ResponseCode",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TmnCode",
+              "value": "{{vnpayTmnCode}}"
+            },
+            {
+              "key": "vnp_TransactionNo",
+              "value": "{{vnpTransactionNo}}"
+            },
+            {
+              "key": "vnp_TransactionStatus",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TxnRef",
+              "value": "{{vnpayTxnRef}}"
+            },
+            {
+              "key": "vnp_SecureHash",
+              "value": "{{vnpSecureHash}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "13. Barista Accept - Nhan don PAID -> PREPARING (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Order transitioned to PREPARING', () => pm.expect(json.status).to.eql('PREPARING'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{baristaToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/barista/orders/{{paidOrderId}}/accept",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "barista",
+            "orders",
+            "{{paidOrderId}}",
+            "accept"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "14. Barista Ready - Pha xong PREPARING -> READY (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Order transitioned to READY', () => pm.expect(json.status).to.eql('READY'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{baristaToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/barista/orders/{{paidOrderId}}/ready",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "barista",
+            "orders",
+            "{{paidOrderId}}",
+            "ready"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "15. Barista Complete - Giao don READY -> COMPLETED (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Order transitioned to COMPLETED', () => pm.expect(json.status).to.eql('COMPLETED'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{baristaToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/barista/orders/{{paidOrderId}}/complete",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "barista",
+            "orders",
+            "{{paidOrderId}}",
+            "complete"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "16. Barista Invalid Transition - Chan quay lai tu COMPLETED (409)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 409 Conflict on COMPLETED -> accept', () => pm.response.to.have.status(409));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{baristaToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/barista/orders/{{paidOrderId}}/accept",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "barista",
+            "orders",
+            "{{paidOrderId}}",
+            "accept"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

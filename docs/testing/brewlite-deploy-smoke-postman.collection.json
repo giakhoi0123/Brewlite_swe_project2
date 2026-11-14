@@ -1,0 +1,372 @@
+{
+  "info": {
+    "name": "BrewLite - Deployment Healthcheck & Smoke Test Suite (Tri)",
+    "_postman_id": "a7b1c2d3-5555-4444-8888-000000000005",
+    "description": "Bo test Postman kiem thu suc khoe trien khai & Smoke Test ST-01..ST-05 theo docs/testing/deployment-healthcheck.md. Mac dinh chay voi Local Docker (localhost:3005, localhost:3006); doi baseUrl/webUrl sang https://brewlite.duckdns.org/api va https://brewlite.duckdns.org khi kiem thu Production EC2.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3005/api"
+    },
+    {
+      "key": "webUrl",
+      "value": "http://localhost:3006"
+    },
+    {
+      "key": "customerToken",
+      "value": ""
+    },
+    {
+      "key": "customerId",
+      "value": ""
+    },
+    {
+      "key": "smokeOrderId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "01. Healthcheck - Web Frontend /products (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Web Frontend responds 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('Response time is under 3000ms', () => pm.expect(pm.response.responseTime).to.be.below(3000));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{webUrl}}/products",
+          "host": [
+            "{{webUrl}}"
+          ],
+          "path": [
+            "products"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "02. Healthcheck & ST-02 - API Products Catalog 8 mon (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('API Healthcheck /products is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Catalog contains seeded products and responds within NFR-01 (<2000ms)', () => {",
+              "  pm.expect(json).to.be.an('array');",
+              "  pm.expect(json.length).to.be.at.least(8);",
+              "  pm.expect(pm.response.responseTime).to.be.below(2000);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/products",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "03. ST-01 Auth - Dang nhap & luu JWT (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.expect(json.accessToken).to.be.a('string').and.not.empty;",
+              "pm.collectionVariables.set('customerToken', json.accessToken);",
+              "pm.collectionVariables.set('customerId', json.user.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"customer@brewlite.test\",\n  \"password\": \"Password123!\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "login"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "04. ST-01 Auth - Xac minh phien dang nhap /auth/me (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "pm.expect(pm.response.json().user.email).to.eql('customer@brewlite.test');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/auth/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "me"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "05. ST-02 Availability - Kiem tra ton kho mon truoc checkout (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "pm.expect(pm.response.json().canOrder).to.eql(true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000001\",\n      \"sizeId\": \"b0000000-0000-0000-0000-000000000001\",\n      \"toppingIds\": [],\n      \"quantity\": 1\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/products/availability",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products",
+            "availability"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "06. ST-03 Order & Promo - Tao don PENDING khoi chay smoke (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.expect(json.status).to.eql('PENDING');",
+              "pm.collectionVariables.set('smokeOrderId', json.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000001\",\n      \"quantity\": 1,\n      \"selectedOptions\": [\n        \"b0000000-0000-0000-0000-000000000001\"\n      ]\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "07. ST-04 History & Loyalty - Kiem tra /orders/me va /loyalty/user (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.expect(json.userId).to.eql(pm.collectionVariables.get('customerId'));",
+              "pm.expect(json.history).to.be.an('array');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/loyalty/user/{{customerId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "loyalty",
+            "user",
+            "{{customerId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "08. ST-05 Payment Gateway - Khoi tao VNPay Sandbox checkoutUrl (202)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 202 Accepted (VNPay Sandbox ready)', () => pm.response.to.have.status(202));",
+              "const json = pm.response.json();",
+              "pm.expect(json.checkoutUrl).to.include('sandbox.vnpayment.vn');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{smokeOrderId}}\",\n  \"method\": \"VNPAY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

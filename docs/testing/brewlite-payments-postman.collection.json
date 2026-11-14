@@ -1,0 +1,1467 @@
+{
+  "info": {
+    "name": "BrewLite - Payments & VNPay Sandbox BE Test Suite (Kiet)",
+    "_postman_id": "a7b1c2d3-3333-4444-8888-000000000003",
+    "description": "Bo test Postman day du cho module Payments & VNPay Sandbox (FR-05): Idempotency-Key replay/conflict, HMAC-SHA512 IPN (PAID/FAILED/UNKNOWN, RspCode 97/01/04/02/00), Return 302 redirect, va Retry don PAYMENT_FAILED. Dien VNPAY_HASH_SECRET vao bien collection vnpayHashSecret de chay cac test ky that (13..20).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3005/api"
+    },
+    {
+      "key": "customerToken",
+      "value": ""
+    },
+    {
+      "key": "otherToken",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    },
+    {
+      "key": "otherOrderId",
+      "value": "00000000-0000-4000-8000-000000000999"
+    },
+    {
+      "key": "idempotencyKey",
+      "value": ""
+    },
+    {
+      "key": "paymentId",
+      "value": ""
+    },
+    {
+      "key": "vnpayTmnCode",
+      "value": ""
+    },
+    {
+      "key": "vnpayTxnRef",
+      "value": ""
+    },
+    {
+      "key": "vnpayAmount",
+      "value": ""
+    },
+    {
+      "key": "vnpayHashSecret",
+      "value": "",
+      "description": "Dien VNPAY_HASH_SECRET tu .env local de kiem thu IPN/Return co chu ky hop le."
+    },
+    {
+      "key": "vnpOrderInfo",
+      "value": ""
+    },
+    {
+      "key": "vnpPayDate",
+      "value": ""
+    },
+    {
+      "key": "vnpTransactionNo",
+      "value": ""
+    },
+    {
+      "key": "vnpSecureHash",
+      "value": ""
+    },
+    {
+      "key": "vnpWrongAmount",
+      "value": ""
+    },
+    {
+      "key": "vnpMissingTxnRef",
+      "value": "00000000000000000000000000000000"
+    }
+  ],
+  "item": [
+    {
+      "name": "01. Login Customer 1 seed account (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.expect(json.accessToken).to.be.a('string').and.not.empty;",
+              "pm.collectionVariables.set('customerToken', json.accessToken);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"customer@brewlite.test\",\n  \"password\": \"Password123!\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "login"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "02. Register Customer 2 de test ownership 403 (201)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('otherEmail', `kiet.other.${Date.now()}@brewlite.test`);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set('otherToken', pm.response.json().accessToken);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"fullName\": \"Customer Ownership Check\",\n  \"email\": \"{{otherEmail}}\",\n  \"password\": \"Password123!\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "register"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "03. Create Order PENDING cho Customer 1 (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.expect(json.status).to.eql('PENDING');",
+              "pm.collectionVariables.set('orderId', json.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000001\",\n      \"quantity\": 2,\n      \"selectedOptions\": [\n        \"b0000000-0000-0000-0000-000000000001\"\n      ]\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "04. Create Payment - Thieu Idempotency-Key (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 400 Bad Request', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"VNPAY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "05. Create Payment - Method khong phai VNPAY (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 400 Bad Request for non-VNPAY method', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"CARD\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "06. Create Payment - Khong co JWT (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"VNPAY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "07. Create Payment - User khac khong so huu don (403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 403 Forbidden', () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{otherToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"VNPAY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "08. Create Payment VNPay - Khoi tao PROCESSING + checkoutUrl (202)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('idempotencyKey', pm.variables.replaceIn('{{$guid}}'));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 202 Accepted', () => pm.response.to.have.status(202));",
+              "const json = pm.response.json();",
+              "pm.test('Returns PROCESSING status and signed VNPay checkoutUrl', () => {",
+              "  pm.expect(json.paymentStatus).to.eql('PROCESSING');",
+              "  pm.expect(json.orderStatus).to.eql('PENDING');",
+              "  pm.expect(json.method).to.eql('VNPAY');",
+              "  pm.expect(json.checkoutUrl).to.include('vnp_SecureHash=');",
+              "});",
+              "pm.collectionVariables.set('paymentId', json.paymentId);",
+              "const query = (json.checkoutUrl.split('?')[1] || '');",
+              "query.split('&').forEach((pair) => {",
+              "  const [k, v] = pair.split('=');",
+              "  if (k === 'vnp_TmnCode') pm.collectionVariables.set('vnpayTmnCode', decodeURIComponent(v || ''));",
+              "  if (k === 'vnp_TxnRef') pm.collectionVariables.set('vnpayTxnRef', decodeURIComponent(v || ''));",
+              "  if (k === 'vnp_Amount') pm.collectionVariables.set('vnpayAmount', decodeURIComponent(v || ''));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"VNPAY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "09. Create Payment - Replay cung Idempotency-Key (202)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 202 Accepted on replay', () => pm.response.to.have.status(202));",
+              "const json = pm.response.json();",
+              "pm.test('Returns exact same paymentId without duplicate transaction', () => {",
+              "  pm.expect(json.paymentId).to.eql(pm.collectionVariables.get('paymentId'));",
+              "  pm.expect(json.paymentStatus).to.eql('PROCESSING');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"VNPAY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "10. Create Payment - Xung dot Idempotency-Key khac payload (409)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 409 Conflict for mismatched payload', () => pm.response.to.have.status(409));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{otherOrderId}}\",\n  \"method\": \"VNPAY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "11. Get Payment Status - Polling khi con PROCESSING (202)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 202 while PROCESSING', () => pm.response.to.have.status(202));",
+              "pm.expect(pm.response.json().paymentId).to.eql(pm.collectionVariables.get('paymentId'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/payments/{{paymentId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments",
+            "{{paymentId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "12. Get Payment Status - User khac bi chan (403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 403 Forbidden for non-owner', () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{otherToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/payments/{{paymentId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments",
+            "{{paymentId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "13. VNPay IPN - Sai chu ky HMAC (RspCode 97)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('Invalid signature returns RspCode 97', () => pm.expect(pm.response.json().RspCode).to.eql('97'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/payments/vnpay-ipn?vnp_Amount={{vnpayAmount}}&vnp_ResponseCode=00&vnp_TmnCode={{vnpayTmnCode}}&vnp_TransactionStatus=00&vnp_TxnRef={{vnpayTxnRef}}&vnp_SecureHash=00000000000000000000000000000000",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments",
+            "vnpay-ipn"
+          ],
+          "query": [
+            {
+              "key": "vnp_Amount",
+              "value": "{{vnpayAmount}}"
+            },
+            {
+              "key": "vnp_ResponseCode",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TmnCode",
+              "value": "{{vnpayTmnCode}}"
+            },
+            {
+              "key": "vnp_TransactionStatus",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TxnRef",
+              "value": "{{vnpayTxnRef}}"
+            },
+            {
+              "key": "vnp_SecureHash",
+              "value": "00000000000000000000000000000000"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "14. VNPay IPN - Khong tim thay giao dich (RspCode 01)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const secret = pm.collectionVariables.get('vnpayHashSecret') || '';",
+              "const params = {",
+              "  vnp_Amount: pm.collectionVariables.get('vnpayAmount') || '5000000',",
+              "  vnp_BankCode: 'NCB',",
+              "  vnp_PayDate: '20261115003000',",
+              "  vnp_ResponseCode: '00',",
+              "  vnp_TmnCode: pm.collectionVariables.get('vnpayTmnCode') || 'UNSET',",
+              "  vnp_TransactionNo: '14000001',",
+              "  vnp_TransactionStatus: '00',",
+              "  vnp_TxnRef: pm.collectionVariables.get('vnpMissingTxnRef')",
+              "};",
+              "const query = Object.keys(params).sort().map((k) => `${k}=${encodeURIComponent(params[k]).replace(/%20/g, '+')}`).join('&');",
+              "const hash = secret ? CryptoJS.HmacSHA512(query, secret).toString(CryptoJS.enc.Hex) : 'missing-secret';",
+              "pm.collectionVariables.set('vnpSecureHash', hash);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "if (pm.collectionVariables.get('vnpayHashSecret')) {",
+              "  pm.test('Unknown TxnRef returns RspCode 01', () => pm.expect(json.RspCode).to.eql('01'));",
+              "} else {",
+              "  pm.test('No vnpayHashSecret configured -> RspCode 97', () => pm.expect(json.RspCode).to.eql('97'));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/payments/vnpay-ipn?vnp_Amount={{vnpayAmount}}&vnp_BankCode=NCB&vnp_PayDate=20261115003000&vnp_ResponseCode=00&vnp_TmnCode={{vnpayTmnCode}}&vnp_TransactionNo=14000001&vnp_TransactionStatus=00&vnp_TxnRef={{vnpMissingTxnRef}}&vnp_SecureHash={{vnpSecureHash}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments",
+            "vnpay-ipn"
+          ],
+          "query": [
+            {
+              "key": "vnp_Amount",
+              "value": "{{vnpayAmount}}"
+            },
+            {
+              "key": "vnp_BankCode",
+              "value": "NCB"
+            },
+            {
+              "key": "vnp_PayDate",
+              "value": "20261115003000"
+            },
+            {
+              "key": "vnp_ResponseCode",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TmnCode",
+              "value": "{{vnpayTmnCode}}"
+            },
+            {
+              "key": "vnp_TransactionNo",
+              "value": "14000001"
+            },
+            {
+              "key": "vnp_TransactionStatus",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TxnRef",
+              "value": "{{vnpMissingTxnRef}}"
+            },
+            {
+              "key": "vnp_SecureHash",
+              "value": "{{vnpSecureHash}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "15. VNPay IPN - Sai so tien (RspCode 04)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const secret = pm.collectionVariables.get('vnpayHashSecret') || '';",
+              "const wrongAmount = String(Number(pm.collectionVariables.get('vnpayAmount') || '5000000') + 100000);",
+              "pm.collectionVariables.set('vnpWrongAmount', wrongAmount);",
+              "const params = {",
+              "  vnp_Amount: wrongAmount,",
+              "  vnp_BankCode: 'NCB',",
+              "  vnp_PayDate: '20261115003000',",
+              "  vnp_ResponseCode: '00',",
+              "  vnp_TmnCode: pm.collectionVariables.get('vnpayTmnCode') || 'UNSET',",
+              "  vnp_TransactionNo: '14000002',",
+              "  vnp_TransactionStatus: '00',",
+              "  vnp_TxnRef: pm.collectionVariables.get('vnpayTxnRef') || '0000'",
+              "};",
+              "const query = Object.keys(params).sort().map((k) => `${k}=${encodeURIComponent(params[k]).replace(/%20/g, '+')}`).join('&');",
+              "const hash = secret ? CryptoJS.HmacSHA512(query, secret).toString(CryptoJS.enc.Hex) : 'missing-secret';",
+              "pm.collectionVariables.set('vnpSecureHash', hash);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "if (pm.collectionVariables.get('vnpayHashSecret')) {",
+              "  pm.test('Mismatched amount returns RspCode 04', () => pm.expect(json.RspCode).to.eql('04'));",
+              "} else {",
+              "  pm.test('No vnpayHashSecret configured -> RspCode 97', () => pm.expect(json.RspCode).to.eql('97'));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/payments/vnpay-ipn?vnp_Amount={{vnpWrongAmount}}&vnp_BankCode=NCB&vnp_PayDate=20261115003000&vnp_ResponseCode=00&vnp_TmnCode={{vnpayTmnCode}}&vnp_TransactionNo=14000002&vnp_TransactionStatus=00&vnp_TxnRef={{vnpayTxnRef}}&vnp_SecureHash={{vnpSecureHash}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments",
+            "vnpay-ipn"
+          ],
+          "query": [
+            {
+              "key": "vnp_Amount",
+              "value": "{{vnpWrongAmount}}"
+            },
+            {
+              "key": "vnp_BankCode",
+              "value": "NCB"
+            },
+            {
+              "key": "vnp_PayDate",
+              "value": "20261115003000"
+            },
+            {
+              "key": "vnp_ResponseCode",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TmnCode",
+              "value": "{{vnpayTmnCode}}"
+            },
+            {
+              "key": "vnp_TransactionNo",
+              "value": "14000002"
+            },
+            {
+              "key": "vnp_TransactionStatus",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TxnRef",
+              "value": "{{vnpayTxnRef}}"
+            },
+            {
+              "key": "vnp_SecureHash",
+              "value": "{{vnpSecureHash}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "16. VNPay Return - Chuyen huong 302 ve Frontend (302)",
+      "protocolProfileBehavior": {
+        "followRedirects": false
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const secret = pm.collectionVariables.get('vnpayHashSecret') || '';",
+              "const params = {",
+              "  vnp_Amount: pm.collectionVariables.get('vnpayAmount') || '5000000',",
+              "  vnp_BankCode: 'NCB',",
+              "  vnp_PayDate: '20261115003000',",
+              "  vnp_ResponseCode: '00',",
+              "  vnp_TmnCode: pm.collectionVariables.get('vnpayTmnCode') || 'UNSET',",
+              "  vnp_TransactionNo: '14000003',",
+              "  vnp_TransactionStatus: '00',",
+              "  vnp_TxnRef: pm.collectionVariables.get('vnpayTxnRef') || '0000'",
+              "};",
+              "const query = Object.keys(params).sort().map((k) => `${k}=${encodeURIComponent(params[k]).replace(/%20/g, '+')}`).join('&');",
+              "const hash = secret ? CryptoJS.HmacSHA512(query, secret).toString(CryptoJS.enc.Hex) : 'missing-secret';",
+              "pm.collectionVariables.set('vnpSecureHash', hash);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 302 Found redirect', () => pm.response.to.have.status(302));",
+              "const loc = pm.response.headers.get('Location') || '';",
+              "pm.test('Redirects to frontend /checkout/vnpay-return', () => {",
+              "  pm.expect(loc).to.include('/checkout/vnpay-return');",
+              "  if (pm.collectionVariables.get('vnpayHashSecret')) {",
+              "    pm.expect(loc).to.include('valid=true');",
+              "  }",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/payments/vnpay-return?vnp_Amount={{vnpayAmount}}&vnp_BankCode=NCB&vnp_PayDate=20261115003000&vnp_ResponseCode=00&vnp_TmnCode={{vnpayTmnCode}}&vnp_TransactionNo=14000003&vnp_TransactionStatus=00&vnp_TxnRef={{vnpayTxnRef}}&vnp_SecureHash={{vnpSecureHash}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments",
+            "vnpay-return"
+          ],
+          "query": [
+            {
+              "key": "vnp_Amount",
+              "value": "{{vnpayAmount}}"
+            },
+            {
+              "key": "vnp_BankCode",
+              "value": "NCB"
+            },
+            {
+              "key": "vnp_PayDate",
+              "value": "20261115003000"
+            },
+            {
+              "key": "vnp_ResponseCode",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TmnCode",
+              "value": "{{vnpayTmnCode}}"
+            },
+            {
+              "key": "vnp_TransactionNo",
+              "value": "14000003"
+            },
+            {
+              "key": "vnp_TransactionStatus",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TxnRef",
+              "value": "{{vnpayTxnRef}}"
+            },
+            {
+              "key": "vnp_SecureHash",
+              "value": "{{vnpSecureHash}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "17. VNPay IPN - Giao dich FAILED (ResponseCode 24) & hoan kho (200)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const secret = pm.collectionVariables.get('vnpayHashSecret') || '';",
+              "const params = {",
+              "  vnp_Amount: pm.collectionVariables.get('vnpayAmount') || '5000000',",
+              "  vnp_BankCode: 'NCB',",
+              "  vnp_PayDate: '20261115003010',",
+              "  vnp_ResponseCode: '24',",
+              "  vnp_TmnCode: pm.collectionVariables.get('vnpayTmnCode') || 'UNSET',",
+              "  vnp_TransactionNo: '14000004',",
+              "  vnp_TransactionStatus: '02',",
+              "  vnp_TxnRef: pm.collectionVariables.get('vnpayTxnRef') || '0000'",
+              "};",
+              "const query = Object.keys(params).sort().map((k) => `${k}=${encodeURIComponent(params[k]).replace(/%20/g, '+')}`).join('&');",
+              "const hash = secret ? CryptoJS.HmacSHA512(query, secret).toString(CryptoJS.enc.Hex) : 'missing-secret';",
+              "pm.collectionVariables.set('vnpSecureHash', hash);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "if (pm.collectionVariables.get('vnpayHashSecret')) {",
+              "  pm.test('Failed IPN acknowledged with RspCode 00', () => pm.expect(json.RspCode).to.eql('00'));",
+              "} else {",
+              "  pm.test('No vnpayHashSecret configured -> RspCode 97', () => pm.expect(json.RspCode).to.eql('97'));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/payments/vnpay-ipn?vnp_Amount={{vnpayAmount}}&vnp_BankCode=NCB&vnp_PayDate=20261115003010&vnp_ResponseCode=24&vnp_TmnCode={{vnpayTmnCode}}&vnp_TransactionNo=14000004&vnp_TransactionStatus=02&vnp_TxnRef={{vnpayTxnRef}}&vnp_SecureHash={{vnpSecureHash}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments",
+            "vnpay-ipn"
+          ],
+          "query": [
+            {
+              "key": "vnp_Amount",
+              "value": "{{vnpayAmount}}"
+            },
+            {
+              "key": "vnp_BankCode",
+              "value": "NCB"
+            },
+            {
+              "key": "vnp_PayDate",
+              "value": "20261115003010"
+            },
+            {
+              "key": "vnp_ResponseCode",
+              "value": "24"
+            },
+            {
+              "key": "vnp_TmnCode",
+              "value": "{{vnpayTmnCode}}"
+            },
+            {
+              "key": "vnp_TransactionNo",
+              "value": "14000004"
+            },
+            {
+              "key": "vnp_TransactionStatus",
+              "value": "02"
+            },
+            {
+              "key": "vnp_TxnRef",
+              "value": "{{vnpayTxnRef}}"
+            },
+            {
+              "key": "vnp_SecureHash",
+              "value": "{{vnpSecureHash}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "18. Retry Payment - Thanh toan lai don PAYMENT_FAILED voi key moi (202)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('retryIdempotencyKey', pm.variables.replaceIn('{{$guid}}'));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.collectionVariables.get('vnpayHashSecret')) {",
+              "  pm.test('Status code is 202 Accepted on retry after PAYMENT_FAILED', () => pm.response.to.have.status(202));",
+              "  const json = pm.response.json();",
+              "  pm.expect(json.paymentStatus).to.eql('PROCESSING');",
+              "  pm.collectionVariables.set('paymentId', json.paymentId);",
+              "  const query = (json.checkoutUrl.split('?')[1] || '');",
+              "  query.split('&').forEach((pair) => {",
+              "    const [k, v] = pair.split('=');",
+              "    if (k === 'vnp_TxnRef') pm.collectionVariables.set('vnpayTxnRef', decodeURIComponent(v || ''));",
+              "  });",
+              "} else {",
+              "  pm.test('Without signed failed IPN, previous attempt is still PROCESSING -> 409', () => pm.response.to.have.status(409));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{retryIdempotencyKey}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"VNPAY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "19. VNPay IPN - Xac nhan thanh toan thanh cong PAID (RspCode 00)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const secret = pm.collectionVariables.get('vnpayHashSecret') || '';",
+              "const params = {",
+              "  vnp_Amount: pm.collectionVariables.get('vnpayAmount') || '5000000',",
+              "  vnp_BankCode: 'NCB',",
+              "  vnp_PayDate: '20261115003100',",
+              "  vnp_ResponseCode: '00',",
+              "  vnp_TmnCode: pm.collectionVariables.get('vnpayTmnCode') || 'UNSET',",
+              "  vnp_TransactionNo: '14000005',",
+              "  vnp_TransactionStatus: '00',",
+              "  vnp_TxnRef: pm.collectionVariables.get('vnpayTxnRef') || '0000'",
+              "};",
+              "const query = Object.keys(params).sort().map((k) => `${k}=${encodeURIComponent(params[k]).replace(/%20/g, '+')}`).join('&');",
+              "const hash = secret ? CryptoJS.HmacSHA512(query, secret).toString(CryptoJS.enc.Hex) : 'missing-secret';",
+              "pm.collectionVariables.set('vnpSecureHash', hash);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "if (pm.collectionVariables.get('vnpayHashSecret')) {",
+              "  pm.test('PAID IPN returns RspCode 00', () => pm.expect(json.RspCode).to.eql('00'));",
+              "} else {",
+              "  pm.test('No vnpayHashSecret configured -> RspCode 97', () => pm.expect(json.RspCode).to.eql('97'));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/payments/vnpay-ipn?vnp_Amount={{vnpayAmount}}&vnp_BankCode=NCB&vnp_PayDate=20261115003100&vnp_ResponseCode=00&vnp_TmnCode={{vnpayTmnCode}}&vnp_TransactionNo=14000005&vnp_TransactionStatus=00&vnp_TxnRef={{vnpayTxnRef}}&vnp_SecureHash={{vnpSecureHash}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments",
+            "vnpay-ipn"
+          ],
+          "query": [
+            {
+              "key": "vnp_Amount",
+              "value": "{{vnpayAmount}}"
+            },
+            {
+              "key": "vnp_BankCode",
+              "value": "NCB"
+            },
+            {
+              "key": "vnp_PayDate",
+              "value": "20261115003100"
+            },
+            {
+              "key": "vnp_ResponseCode",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TmnCode",
+              "value": "{{vnpayTmnCode}}"
+            },
+            {
+              "key": "vnp_TransactionNo",
+              "value": "14000005"
+            },
+            {
+              "key": "vnp_TransactionStatus",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TxnRef",
+              "value": "{{vnpayTxnRef}}"
+            },
+            {
+              "key": "vnp_SecureHash",
+              "value": "{{vnpSecureHash}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "20. VNPay IPN - Goi IPN lap lai tren don da chot (RspCode 02)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "if (pm.collectionVariables.get('vnpayHashSecret')) {",
+              "  pm.test('Duplicate IPN returns RspCode 02 (Order already confirmed)', () => pm.expect(json.RspCode).to.eql('02'));",
+              "} else {",
+              "  pm.test('No vnpayHashSecret configured -> RspCode 97', () => pm.expect(json.RspCode).to.eql('97'));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/payments/vnpay-ipn?vnp_Amount={{vnpayAmount}}&vnp_BankCode=NCB&vnp_PayDate=20261115003100&vnp_ResponseCode=00&vnp_TmnCode={{vnpayTmnCode}}&vnp_TransactionNo=14000005&vnp_TransactionStatus=00&vnp_TxnRef={{vnpayTxnRef}}&vnp_SecureHash={{vnpSecureHash}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments",
+            "vnpay-ipn"
+          ],
+          "query": [
+            {
+              "key": "vnp_Amount",
+              "value": "{{vnpayAmount}}"
+            },
+            {
+              "key": "vnp_BankCode",
+              "value": "NCB"
+            },
+            {
+              "key": "vnp_PayDate",
+              "value": "20261115003100"
+            },
+            {
+              "key": "vnp_ResponseCode",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TmnCode",
+              "value": "{{vnpayTmnCode}}"
+            },
+            {
+              "key": "vnp_TransactionNo",
+              "value": "14000005"
+            },
+            {
+              "key": "vnp_TransactionStatus",
+              "value": "00"
+            },
+            {
+              "key": "vnp_TxnRef",
+              "value": "{{vnpayTxnRef}}"
+            },
+            {
+              "key": "vnp_SecureHash",
+              "value": "{{vnpSecureHash}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "21. Paid Order Guard - Chan thanh toan lan 2 tren don da PAID (409)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 409 Conflict (ORDER_ALREADY_PAID or unresolved)', () => pm.response.to.have.status(409));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"VNPAY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}
