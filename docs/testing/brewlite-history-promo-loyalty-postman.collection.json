@@ -1,0 +1,872 @@
+{
+  "info": {
+    "name": "BrewLite - Order History, Promotions & Loyalty BE Test Suite (Duy)",
+    "_postman_id": "a7b1c2d3-4444-4444-8888-000000000004",
+    "description": "Bo test Postman cho module Order History, Promotions & Loyalty (FR-06, FR-08, FR-09). Kiem thu danh sach/validate voucher, tich/doi diem, lich su don hang cua toi va chong IDOR giua 2 tai khoan.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3005/api"
+    },
+    {
+      "key": "customerToken",
+      "value": ""
+    },
+    {
+      "key": "customerId",
+      "value": "c0000000-0000-0000-0000-000000000001"
+    },
+    {
+      "key": "otherEmail",
+      "value": ""
+    },
+    {
+      "key": "otherToken",
+      "value": ""
+    },
+    {
+      "key": "otherUserId",
+      "value": ""
+    },
+    {
+      "key": "otherOrderId",
+      "value": ""
+    },
+    {
+      "key": "redeemCode",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "01. Login Customer 1 seed account (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.collectionVariables.set('customerToken', json.accessToken);",
+              "pm.collectionVariables.set('customerId', json.user.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"customer@brewlite.test\",\n  \"password\": \"Password123!\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "login"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "02. Register Customer 2 de test single-use voucher & chong IDOR (201)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('otherEmail', `duy.test.${Date.now()}@brewlite.test`);",
+              "pm.collectionVariables.set('redeemCode', `REDEEM${Date.now()}`);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.collectionVariables.set('otherToken', json.accessToken);",
+              "pm.collectionVariables.set('otherUserId', json.user.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"fullName\": \"Duy Test Customer 2\",\n  \"email\": \"{{otherEmail}}\",\n  \"password\": \"Password123!\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "register"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "03. Get Active Promotions - Loai tru ma het han EXPIRED10 (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Returns active promotions without expired codes', () => {",
+              "  pm.expect(json).to.be.an('array');",
+              "  const codes = json.map((p) => p.code);",
+              "  pm.expect(codes).to.include('HELLOBREW');",
+              "  pm.expect(codes).to.include('BREW20');",
+              "  pm.expect(codes).to.not.include('EXPIRED10');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{otherToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/promotions",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "promotions"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "04. Validate Promotion - HELLOBREW hop le giam 20k (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.test('Calculates fixed discount 20000 correctly', () => {",
+              "  pm.expect(json.code).to.eql('HELLOBREW');",
+              "  pm.expect(json.discountAmount).to.eql(20000);",
+              "  pm.expect(json.finalAmount).to.eql(40000);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{otherToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"HELLOBREW\",\n  \"orderAmount\": 60000\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/promotions/validate",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "promotions",
+            "validate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "05. Validate Promotion - BREW20 giam 20% tran toi da 30k (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.test('Caps percentage discount at maxDiscount 30000', () => {",
+              "  pm.expect(json.code).to.eql('BREW20');",
+              "  pm.expect(json.discountAmount).to.eql(30000);",
+              "  pm.expect(json.finalAmount).to.eql(170000);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"BREW20\",\n  \"orderAmount\": 200000\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/promotions/validate",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "promotions",
+            "validate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "06. Validate Promotion - Khong du don toi thieu 50k (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 400 Bad Request', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"HELLOBREW\",\n  \"orderAmount\": 30000\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/promotions/validate",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "promotions",
+            "validate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "07. Validate Promotion - Ma het han EXPIRED10 (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 400 Bad Request for expired voucher', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"EXPIRED10\",\n  \"orderAmount\": 50000\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/promotions/validate",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "promotions",
+            "validate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "08. Validate Promotion - Ma khong ton tai (404)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 404 Not Found', () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"NO_SUCH_VOUCHER_999\",\n  \"orderAmount\": 100000\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/promotions/validate",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "promotions",
+            "validate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "09. Get Loyalty Info - Diem va lich su cua Customer 1 (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Returns currentPoints, history and availableVouchers', () => {",
+              "  pm.expect(json.userId).to.eql(pm.collectionVariables.get('customerId'));",
+              "  pm.expect(json.currentPoints).to.be.a('number');",
+              "  pm.expect(json.history).to.be.an('array');",
+              "  pm.expect(json.availableVouchers).to.be.an('array');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/loyalty/user/{{customerId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "loyalty",
+            "user",
+            "{{customerId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "10. Redeem Points - Khong du diem (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 400 Bad Request when points insufficient', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{otherUserId}}\",\n  \"points\": 99999,\n  \"rewardCode\": \"{{redeemCode}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/loyalty/redeem",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "loyalty",
+            "redeem"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "11. Earn Points - Cong 50 diem cho Customer 2 (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.expect(json.newPointsBalance).to.eql(50);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{otherUserId}}\",\n  \"points\": 50,\n  \"description\": \"Test earn points Duy\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/loyalty/earn",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "loyalty",
+            "earn"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "12. Redeem Points - Doi 50 diem thanh voucher 30k cho Customer 2 (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.expect(json.newPointsBalance).to.eql(0);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{otherUserId}}\",\n  \"points\": 50,\n  \"rewardCode\": \"{{redeemCode}}\",\n  \"description\": \"Doi 50 diem lay ma {{redeemCode}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/loyalty/redeem",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "loyalty",
+            "redeem"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "13. Create Order voi HELLOBREW tren Customer 2 (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.test('Voucher HELLOBREW applied: subtotal 58000, discount 20000, total 38000', () => {",
+              "  pm.expect(json.subtotal).to.eql(58000);",
+              "  pm.expect(json.discount).to.eql(20000);",
+              "  pm.expect(json.total).to.eql(38000);",
+              "});",
+              "pm.collectionVariables.set('otherOrderId', json.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{otherToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000002\",\n      \"quantity\": 2,\n      \"selectedOptions\": [\n        \"b0000000-0000-0000-0000-000000000004\"\n      ]\n    }\n  ],\n  \"voucherCode\": \"HELLOBREW\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "14. Validate Promotion - Chan dung lai voucher HELLOBREW da su dung (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 400 Bad Request on single-use voucher reuse', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{otherToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"HELLOBREW\",\n  \"orderAmount\": 60000\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/promotions/validate",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "promotions",
+            "validate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "15. Order History - Xem lich su don cua toi /orders/me (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Contains newly created order without leaking internal fields', () => {",
+              "  pm.expect(json).to.be.an('array').that.is.not.empty;",
+              "  const created = json.find((o) => o.id === pm.collectionVariables.get('otherOrderId'));",
+              "  pm.expect(created).to.be.an('object');",
+              "  pm.expect(created.voucherCode).to.eql('HELLOBREW');",
+              "  pm.expect(created).to.not.have.property('reservation');",
+              "  pm.expect(created).to.not.have.property('version');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{otherToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/orders/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders",
+            "me"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "16. Order Detail - Xem chi tiet don cua chinh minh (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.expect(json.id).to.eql(pm.collectionVariables.get('otherOrderId'));",
+              "pm.expect(json.items).to.be.an('array').that.is.not.empty;"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{otherToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/orders/{{otherOrderId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders",
+            "{{otherOrderId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "17. Order Detail - Chong IDOR khi Customer 1 xem don Customer 2 (404)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 404 Not Found (anti-IDOR)', () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/orders/{{otherOrderId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders",
+            "{{otherOrderId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "18. Order History - Khong co JWT (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/orders/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders",
+            "me"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}
