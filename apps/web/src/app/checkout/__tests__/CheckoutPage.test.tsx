@@ -127,8 +127,9 @@ describe("CheckoutPage", () => {
     expect(screen.getByText("Xác nhận thanh toán")).toBeInTheDocument();
     expect(screen.getByText("Cà phê đen đá")).toBeInTheDocument();
     expect(screen.getByText("Khách hàng thử nghiệm")).toBeInTheDocument();
+    expect(screen.queryByText(/Phí vận chuyển/i)).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /THANH TOÁN QUA VNPAY/i }),
+      screen.getByRole("button", { name: /THANH TOÁN QUA VNPAY.*50\.000/i }),
     ).toBeInTheDocument();
   });
 
@@ -138,7 +139,7 @@ describe("CheckoutPage", () => {
       status: "PENDING",
       subtotal: 50000,
       discount: 0,
-      total: 65000,
+      total: 50000,
       createdAt: new Date().toISOString(),
     });
 
@@ -146,7 +147,7 @@ describe("CheckoutPage", () => {
       paymentId: "pay-30000000-0000-4000-8000-000000000001",
       orderId: "ord-10000000-0000-4000-8000-000000000001",
       method: "VNPAY",
-      amount: 65000,
+      amount: 50000,
       paymentStatus: "PAID",
       orderStatus: "PAID",
       resultCode: "PAYMENT_PAID",
@@ -196,7 +197,7 @@ describe("CheckoutPage", () => {
       status: "PENDING",
       subtotal: 50000,
       discount: 0,
-      total: 65000,
+      total: 50000,
       createdAt: new Date().toISOString(),
     });
 
@@ -205,7 +206,7 @@ describe("CheckoutPage", () => {
         paymentId: "pay-123",
         orderId: "ord-123",
         method: "VNPAY",
-        amount: 65000,
+        amount: 50000,
         paymentStatus: "FAILED",
         orderStatus: "PAYMENT_FAILED",
         resultCode: "PAYMENT_DECLINED",
@@ -216,7 +217,7 @@ describe("CheckoutPage", () => {
         paymentId: "pay-456",
         orderId: "ord-123",
         method: "VNPAY",
-        amount: 65000,
+        amount: 50000,
         paymentStatus: "PAID",
         orderStatus: "PAID",
         resultCode: "PAYMENT_PAID",
@@ -254,5 +255,112 @@ describe("CheckoutPage", () => {
       "ord-123",
     );
     expect(retryKey).not.toBe(firstKey);
+  });
+
+  it("handles replayed FAILED/PAID outcomes without redirecting to a stale checkoutUrl and retries with a new key", async () => {
+    window.sessionStorage.setItem(
+      "brewlite.pending-vnpay-checkout",
+      JSON.stringify({
+        orderId: "ord-prev",
+        idempotencyKey: "key-prev",
+      }),
+    );
+
+    (checkoutApi.processPaymentApi as jest.Mock)
+      .mockResolvedValueOnce({
+        paymentId: "pay-prev",
+        orderId: "ord-prev",
+        method: "VNPAY",
+        amount: 50000,
+        paymentStatus: "FAILED",
+        orderStatus: "PAYMENT_FAILED",
+        resultCode: "PAYMENT_DECLINED",
+        retryable: true,
+        processedAt: new Date().toISOString(),
+        checkoutUrl: "https://sandbox.vnpayment.vn/stale-url",
+        expiresAt: null,
+      })
+      .mockResolvedValueOnce({
+        paymentId: "pay-next",
+        orderId: "ord-prev",
+        method: "VNPAY",
+        amount: 50000,
+        paymentStatus: "PAID",
+        orderStatus: "PAID",
+        resultCode: "PAYMENT_PAID",
+        retryable: false,
+        processedAt: new Date().toISOString(),
+        checkoutUrl: "https://sandbox.vnpayment.vn/stale-url",
+        expiresAt: null,
+      });
+
+    render(<CheckoutPage />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /THANH TOÁN QUA VNPAY/i }),
+    );
+    expect(
+      await screen.findByText("Thanh toán chưa hoàn tất"),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /Thử thanh toán lại/i }),
+    );
+    expect(await screen.findByText("Đặt hàng thành công!")).toBeInTheDocument();
+
+    expect(checkoutApi.createOrderApi).not.toHaveBeenCalled();
+    expect(checkoutApi.processPaymentApi).toHaveBeenCalledTimes(2);
+    expect((checkoutApi.processPaymentApi as jest.Mock).mock.calls[0][2]).toBe(
+      "key-prev",
+    );
+    expect(
+      (checkoutApi.processPaymentApi as jest.Mock).mock.calls[1][2],
+    ).not.toBe("key-prev");
+    expect(mockClearCart).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates a new order when stored session order belongs to an edited cart", async () => {
+    window.sessionStorage.setItem(
+      "brewlite.pending-vnpay-checkout",
+      JSON.stringify({
+        orderId: "ord-stale",
+        idempotencyKey: "key-stale",
+        cartSignature: "different-cart-signature",
+      }),
+    );
+
+    (checkoutApi.createOrderApi as jest.Mock).mockResolvedValue({
+      id: "ord-fresh",
+      status: "PENDING",
+      subtotal: 50000,
+      discount: 0,
+      total: 50000,
+      createdAt: new Date().toISOString(),
+    });
+    (checkoutApi.processPaymentApi as jest.Mock).mockResolvedValue({
+      paymentId: "pay-fresh",
+      orderId: "ord-fresh",
+      method: "VNPAY",
+      amount: 50000,
+      paymentStatus: "PAID",
+      orderStatus: "PAID",
+      resultCode: "PAYMENT_PAID",
+      retryable: false,
+      processedAt: new Date().toISOString(),
+      checkoutUrl: null,
+      expiresAt: null,
+    });
+
+    render(<CheckoutPage />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /THANH TOÁN QUA VNPAY/i }),
+    );
+    expect(await screen.findByText("Đặt hàng thành công!")).toBeInTheDocument();
+
+    expect(checkoutApi.createOrderApi).toHaveBeenCalledTimes(1);
+    expect(
+      (checkoutApi.processPaymentApi as jest.Mock).mock.calls[0][0],
+    ).toBe("ord-fresh");
   });
 });
