@@ -258,6 +258,10 @@ export class PaymentsService {
           );
         }
 
+        const isTerminal =
+          gatewayResult.paymentStatus === "PAID" ||
+          gatewayResult.paymentStatus === "FAILED";
+
         return await tx.payment.update({
           where: { id: current.id },
           data: {
@@ -274,9 +278,11 @@ export class PaymentsService {
             ...(gatewayResult.gatewayTransactionNo
               ? { gatewayTxnNo: gatewayResult.gatewayTransactionNo }
               : {}),
-            ...(gatewayResult.checkoutUrl
-              ? { checkoutUrl: gatewayResult.checkoutUrl }
-              : {}),
+            ...(isTerminal
+              ? { checkoutUrl: null }
+              : gatewayResult.checkoutUrl
+                ? { checkoutUrl: gatewayResult.checkoutUrl }
+                : {}),
             ...(gatewayResult.expiresAt
               ? { expiresAt: gatewayResult.expiresAt }
               : {}),

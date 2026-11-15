@@ -67,11 +67,19 @@ export default function VnpayReturnPage() {
           const pending = window.sessionStorage.getItem(PENDING_CHECKOUT_KEY);
           if (pending) {
             try {
-              const value = JSON.parse(pending) as { orderId?: string };
+              const value = JSON.parse(pending) as {
+                orderId?: string;
+                cartSignature?: string;
+              };
               if (value.orderId) {
                 window.sessionStorage.setItem(
                   PENDING_CHECKOUT_KEY,
-                  JSON.stringify({ orderId: value.orderId }),
+                  JSON.stringify({
+                    orderId: value.orderId,
+                    ...(value.cartSignature
+                      ? { cartSignature: value.cartSignature }
+                      : {}),
+                  }),
                 );
               }
             } catch {

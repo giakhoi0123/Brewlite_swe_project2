@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -56,6 +56,27 @@ interface PendingCheckout {
   orderId: string;
   idempotencyKey?: string;
   paymentId?: string;
+  cartSignature?: string;
+}
+
+function buildCartSignature(
+  items: Array<{
+    productId: string;
+    quantity: number;
+    customization?: { size?: string; toppingIds?: string[]; note?: string };
+  }>,
+  voucherCode: string | null,
+): string {
+  return JSON.stringify({
+    voucherCode: voucherCode?.trim() || null,
+    items: items.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      size: item.customization?.size ?? "",
+      toppingIds: [...(item.customization?.toppingIds ?? [])].sort(),
+      note: item.customization?.note?.trim() ?? "",
+    })),
+  });
 }
 
 function readPendingCheckout(): PendingCheckout | null {
@@ -93,6 +114,26 @@ export default function CheckoutPage() {
     () => computeCartSummary(items, voucherCode),
     [items, voucherCode],
   );
+  const checkoutTotal = Math.max(0, summary.subtotal - summary.discount);
+  const cartSignature = useMemo(
+    () => buildCartSignature(items, voucherCode),
+    [items, voucherCode],
+  );
+
+  useEffect(() => {
+    if (!isReady) return;
+    const pending = readPendingCheckout();
+    if (
+      pending?.orderId &&
+      pending.cartSignature &&
+      pending.cartSignature !== cartSignature
+    ) {
+      window.sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
+      setConfirmedOrderId(null);
+      setPaymentAttemptKey(null);
+      setLastPaymentResult(null);
+    }
+  }, [isReady, cartSignature]);
 
   // Hàm hỗ trợ format hiển thị Size thân thiện (chuyển đổi ID UUID rác thành tên Size)
   const formatSizeLabel = (sizeInput?: string) => {
@@ -256,9 +297,16 @@ export default function CheckoutPage() {
     setWarningMessage(null);
 
     try {
-      // BƯỚC 1: Chỉ tạo Order lần đầu. Retry sau decline phải dùng lại
-      // orderId cũ để OrdersService tái kiểm tra và giữ kho trong transaction.
-      let currentOrderId = confirmedOrderId;
+      const pending = readPendingCheckout();
+      const isStaleOrder = Boolean(
+        pending?.cartSignature && pending.cartSignature !== cartSignature,
+      );
+      if (isStaleOrder) {
+        window.sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
+      }
+
+      // BƯỚC 1: Chỉ tạo Order lần đầu hoặc khi giỏ hàng/voucher đã thay đổi.
+      let currentOrderId = isStaleOrder ? null : confirmedOrderId;
       if (!currentOrderId) {
         const orderPayload = {
           items: items.map((item) => ({
@@ -282,12 +330,12 @@ export default function CheckoutPage() {
         const orderRes = await createOrderApi(orderPayload, token);
         currentOrderId = orderRes.id;
         setConfirmedOrderId(currentOrderId);
-        writePendingCheckout({ orderId: currentOrderId });
+        writePendingCheckout({ orderId: currentOrderId, cartSignature });
       }
 
       // BƯỚC 2: Network/UNKNOWN retry dùng lại key; decline xác định dùng key mới.
       const isDeclinedRetry = lastPaymentResult?.paymentStatus === "FAILED";
-      let idempotencyKey = paymentAttemptKey;
+      let idempotencyKey = isStaleOrder ? null : paymentAttemptKey;
       if (!idempotencyKey || isDeclinedRetry) {
         idempotencyKey = createIdempotencyKey();
         setPaymentAttemptKey(idempotencyKey);
@@ -306,32 +354,40 @@ export default function CheckoutPage() {
 
       setLastPaymentResult(paymentRes);
 
-      if (paymentRes.checkoutUrl) {
+      // BƯỚC 4: Kiểm tra trạng thái đã chốt trước khi redirect để tránh quay lại checkoutUrl cũ
+      if (paymentRes.paymentStatus === "PAID") {
+        clearCart();
+        window.sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
+        return;
+      }
+
+      if (paymentRes.paymentStatus === "FAILED") {
+        setPaymentAttemptKey(null);
+        writePendingCheckout({ orderId: currentOrderId, cartSignature });
+        setErrorMessage(
+          "Giao dịch bị từ chối bởi cổng thanh toán (PAYMENT_DECLINED). Bạn có thể thử lại bằng phương thức khác.",
+        );
+        return;
+      }
+
+      if (paymentRes.paymentStatus === "PROCESSING" && paymentRes.checkoutUrl) {
         writePendingCheckout({
           orderId: currentOrderId,
           idempotencyKey,
           paymentId: paymentRes.paymentId,
+          cartSignature,
         });
         window.location.assign(paymentRes.checkoutUrl);
         return;
       }
 
-      // BƯỚC 4: Xử lý các trạng thái phản hồi theo hợp đồng
-      if (paymentRes.paymentStatus === "PAID") {
-        clearCart();
-        window.sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
-      } else if (paymentRes.paymentStatus === "PROCESSING") {
+      if (paymentRes.paymentStatus === "PROCESSING") {
         setWarningMessage(
           "Giao dịch đang được xử lý (202 PROCESSING). Đơn hàng đang được giữ trạng thái PENDING. Vui lòng không tạo thêm yêu cầu thanh toán trùng lặp.",
         );
       } else if (paymentRes.paymentStatus === "UNKNOWN") {
         setWarningMessage(
           "Yêu cầu thanh toán vượt thời gian chờ hoặc trạng thái chưa xác định (202 UNKNOWN/TIMEOUT). Hệ thống đang lưu đơn để đối soát, không tự động trừ tiền lần hai.",
-        );
-      } else if (paymentRes.paymentStatus === "FAILED") {
-        writePendingCheckout({ orderId: currentOrderId });
-        setErrorMessage(
-          "Giao dịch bị từ chối bởi cổng thanh toán (PAYMENT_DECLINED). Bạn có thể thử lại bằng phương thức khác.",
         );
       }
     } catch (err: any) {
@@ -505,21 +561,12 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              <div className="flex justify-between text-on-surface-variant">
-                <span>Phí vận chuyển:</span>
-                <span className="font-medium text-on-surface">
-                  {summary.shipping === 0
-                    ? "Miễn phí"
-                    : formatCurrency(summary.shipping)}
-                </span>
-              </div>
-
               <div className="flex justify-between items-baseline pt-2 border-t border-outline-variant/30">
                 <span className="font-bold text-body-md text-on-surface">
                   Tổng cộng:
                 </span>
                 <span className="font-display text-headline-sm font-bold text-secondary">
-                  {formatCurrency(summary.total)}
+                  {formatCurrency(checkoutTotal)}
                 </span>
               </div>
               <p className="text-[11px] text-outline text-right italic">
@@ -542,7 +589,7 @@ export default function CheckoutPage() {
                 <>
                   <Lock className="w-4 h-4" />
                   <span>
-                    THANH TOÁN QUA VNPAY ({formatCurrency(summary.total)})
+                    THANH TOÁN QUA VNPAY ({formatCurrency(checkoutTotal)})
                   </span>
                 </>
               )}
