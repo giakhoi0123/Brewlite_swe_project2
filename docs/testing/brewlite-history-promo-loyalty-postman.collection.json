@@ -605,10 +605,11 @@
             "exec": [
               "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
               "const json = pm.response.json();",
-              "pm.test('Voucher HELLOBREW applied: subtotal 58000, discount 20000, total 38000', () => {",
+              "pm.test('Voucher HELLOBREW applied: subtotal 58000, discount 20000, shippingFee 15000, total 53000', () => {",
               "  pm.expect(json.subtotal).to.eql(58000);",
               "  pm.expect(json.discount).to.eql(20000);",
-              "  pm.expect(json.total).to.eql(38000);",
+              "  pm.expect(json.shippingFee).to.eql(15000);",
+              "  pm.expect(json.total).to.eql(53000);",
               "});",
               "pm.collectionVariables.set('otherOrderId', json.id);"
             ]

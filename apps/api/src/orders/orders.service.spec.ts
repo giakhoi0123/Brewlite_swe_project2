@@ -168,6 +168,8 @@ describe('OrdersService & Pure Helpers Unit Tests (Task 5.1 - Lê Quang Điệp)
 
       const orderPricing = calculateOrderPricing([item1, item2]);
       expect(orderPricing.subtotal.toString()).toBe('100000'); // 60000 + 40000
+      expect(orderPricing.shippingFee.toString()).toBe('0'); // Freeship >= 100000
+      expect(orderPricing.total.toString()).toBe('100000');
     });
 
     it('6. Không dùng giá client gửi (tính hoàn toàn server-side)', () => {
@@ -188,7 +190,8 @@ describe('OrdersService & Pure Helpers Unit Tests (Task 5.1 - Lê Quang Điệp)
       });
       const pricing = calculateOrderPricing([item], new Prisma.Decimal(-10000));
       expect(pricing.discount.toString()).toBe('0');
-      expect(pricing.total.toString()).toBe('50000');
+      expect(pricing.shippingFee.toString()).toBe('15000');
+      expect(pricing.total.toString()).toBe('65000');
     });
 
     it('8. Discount không vượt quá subtotal (cap discount tại subtotal)', () => {
@@ -199,10 +202,11 @@ describe('OrdersService & Pure Helpers Unit Tests (Task 5.1 - Lê Quang Điệp)
       });
       const pricing = calculateOrderPricing([item], new Prisma.Decimal(80000));
       expect(pricing.discount.toString()).toBe('50000');
-      expect(pricing.total.toString()).toBe('0');
+      expect(pricing.shippingFee.toString()).toBe('15000');
+      expect(pricing.total.toString()).toBe('15000');
     });
 
-    it('9. total = subtotal - discount luôn bảo toàn', () => {
+    it('9. total = subtotal - discount + shippingFee luôn bảo toàn', () => {
       const item = calculateItemPrice({
         product: { id: prodId1, name: 'Cà phê', basePrice: 60000 },
         quantity: 1,
@@ -211,7 +215,8 @@ describe('OrdersService & Pure Helpers Unit Tests (Task 5.1 - Lê Quang Điệp)
       const pricing = calculateOrderPricing([item], new Prisma.Decimal(20000));
       expect(pricing.subtotal.toString()).toBe('60000');
       expect(pricing.discount.toString()).toBe('20000');
-      expect(pricing.total.toString()).toBe('40000');
+      expect(pricing.shippingFee.toString()).toBe('15000');
+      expect(pricing.total.toString()).toBe('55000');
     });
   });
 
@@ -793,6 +798,8 @@ describe('OrdersService & Pure Helpers Unit Tests (Task 5.1 - Lê Quang Điệp)
         expect.objectContaining({
           data: expect.objectContaining({
             status: OrderStatus.PENDING,
+            shippingFee: new Prisma.Decimal(15000),
+            total: new Prisma.Decimal(35000),
           }),
         }),
       );

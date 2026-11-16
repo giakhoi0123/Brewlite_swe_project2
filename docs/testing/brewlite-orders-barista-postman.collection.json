@@ -370,12 +370,13 @@
             "exec": [
               "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
               "const json = pm.response.json();",
-              "pm.test('Server calculates price (29000 + 5000 = 34000) and sets PENDING', () => {",
+              "pm.test('Server calculates price (29000 + 5000 + 15000 shipping = 49000) and sets PENDING', () => {",
               "  pm.expect(json.id).to.be.a('string').and.not.empty;",
               "  pm.expect(json.orderNumber).to.be.a('string').and.not.empty;",
               "  pm.expect(json.status).to.eql('PENDING');",
               "  pm.expect(json.subtotal).to.eql(34000);",
-              "  pm.expect(json.total).to.eql(34000);",
+              "  pm.expect(json.shippingFee).to.eql(15000);",
+              "  pm.expect(json.total).to.eql(49000);",
               "});",
               "pm.collectionVariables.set('pendingOrderId', json.id);"
             ]
@@ -686,7 +687,7 @@
               "pm.collectionVariables.set('vnpPayDate', payDate);",
               "pm.collectionVariables.set('vnpTransactionNo', txnNo);",
               "const params = {",
-              "  vnp_Amount: pm.collectionVariables.get('vnpayAmount') || '3400000',",
+              "  vnp_Amount: pm.collectionVariables.get('vnpayAmount') || '4900000',",
               "  vnp_BankCode: 'NCB',",
               "  vnp_OrderInfo: orderInfo,",
               "  vnp_PayDate: payDate,",

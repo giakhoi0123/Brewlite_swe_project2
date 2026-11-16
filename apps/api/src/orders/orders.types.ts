@@ -29,8 +29,11 @@ import { OptionType, OrderStatus, Prisma, UserRole } from '@prisma/client';
  *       Được tính toán và xác thực độc lập từ Promotion Engine (nếu có voucherCode hợp lệ).
  *       Ràng buộc: 0 <= Order.discount <= Order.subtotal.
  *
- *    f. Tổng thanh toán đơn hàng (Order.total):
- *       Order.total = Order.subtotal - Order.discount
+ *    f. Phí giao hàng (Order.shippingFee):
+ *       0 với đơn từ 100.000đ trở lên, 15.000đ với đơn có subtotal > 0 và < 100.000đ.
+ *
+ *    g. Tổng thanh toán đơn hàng (Order.total):
+ *       Order.total = Order.subtotal - Order.discount + Order.shippingFee
  *       Ràng buộc cơ sở dữ liệu: total >= 0.
  *
  * 3. QUY ƯỚC HAI BIỂU DIỄN SNAPSHOT OPTIONS:
@@ -76,6 +79,7 @@ export interface CalculatedOrderPrice {
   items: CalculatedItemPrice[];
   subtotal: Prisma.Decimal;
   discount: Prisma.Decimal;
+  shippingFee: Prisma.Decimal;
   total: Prisma.Decimal;
   voucherCode?: string;
   promotionId?: string;
@@ -98,6 +102,7 @@ export interface CreateOrderResult {
   status: OrderStatus;
   subtotal: number;
   discount: number;
+  shippingFee: number;
   total: number;
   createdAt: string;
   items?: CreateOrderItemResponse[];
@@ -147,6 +152,7 @@ export interface BaristaOrderResponse {
   status: OrderStatus;
   subtotal: number;
   discount: number;
+  shippingFee: number;
   total: number;
   notes?: string | null;
   createdAt: string;
@@ -262,6 +268,7 @@ export interface CustomerOrderResponse {
   status: OrderStatus;
   subtotal: number;
   discount: number;
+  shippingFee: number;
   total: number;
   totalAmount: number;
   discountAmount: number;
@@ -285,6 +292,7 @@ export function mapCustomerOrderResponse(order: {
   status: OrderStatus;
   subtotal: Prisma.Decimal | number;
   discount: Prisma.Decimal | number;
+  shippingFee?: Prisma.Decimal | number;
   total: Prisma.Decimal | number;
   voucherCode?: string | null;
   pointsEarned: number;
@@ -318,6 +326,8 @@ export function mapCustomerOrderResponse(order: {
     typeof order.discount === 'number'
       ? order.discount
       : Number(order.discount);
+  const shippingFeeNum =
+    order.shippingFee !== undefined ? Number(order.shippingFee) : 0;
   const totalNum =
     typeof order.total === 'number' ? order.total : Number(order.total);
 
@@ -328,6 +338,7 @@ export function mapCustomerOrderResponse(order: {
     status: order.status,
     subtotal: subtotalNum,
     discount: discountNum,
+    shippingFee: shippingFeeNum,
     total: totalNum,
     totalAmount: subtotalNum,
     discountAmount: discountNum,

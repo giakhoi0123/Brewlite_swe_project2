@@ -28,6 +28,22 @@ export interface OrderItemCalculationInput {
   notes?: string;
 }
 
+export const FREE_SHIPPING_THRESHOLD = 100000;
+export const SHIPPING_FEE = 15000;
+
+export function calculateShippingFee(
+  subtotal: Prisma.Decimal | number | string,
+): Prisma.Decimal {
+  const subtotalDecimal = new Prisma.Decimal(subtotal);
+  if (
+    subtotalDecimal.lte(0) ||
+    subtotalDecimal.gte(FREE_SHIPPING_THRESHOLD)
+  ) {
+    return new Prisma.Decimal(0);
+  }
+  return new Prisma.Decimal(SHIPPING_FEE);
+}
+
 /**
  * Ánh xạ kết quả lưu trữ Order sang CreateOrderResult cho client.
  * Tuyệt đối không để lộ dữ liệu nội bộ như stock, version, reservation ID.
@@ -39,6 +55,7 @@ export function mapOrderResponse(
     status: OrderStatus;
     subtotal: Prisma.Decimal;
     discount: Prisma.Decimal;
+    shippingFee?: Prisma.Decimal | number;
     total: Prisma.Decimal;
     createdAt: Date;
   },
@@ -51,6 +68,8 @@ export function mapOrderResponse(
     status: order.status,
     subtotal: order.subtotal.toNumber(),
     discount: order.discount.toNumber(),
+    shippingFee:
+      order.shippingFee !== undefined ? Number(order.shippingFee) : 0,
     total: order.total.toNumber(),
     createdAt: order.createdAt.toISOString(),
     ...(items ? { items } : {}),
@@ -123,7 +142,7 @@ export function calculateItemPrice(
 
 /**
  * Tính toán tổng tiền đơn hàng, áp dụng discount (nếu có) và cap discount an toàn.
- * Đảm bảo: 0 <= discount <= subtotal và total = subtotal - discount.
+ * Đảm bảo: 0 <= discount <= subtotal và total = subtotal - discount + shippingFee.
  */
 export function calculateOrderPricing(
   items: CalculatedItemPrice[],
@@ -146,12 +165,14 @@ export function calculateOrderPricing(
     discount = subtotal;
   }
 
-  const total = subtotal.minus(discount);
+  const shippingFee = calculateShippingFee(subtotal);
+  const total = subtotal.minus(discount).plus(shippingFee);
 
   return {
     items,
     subtotal,
     discount,
+    shippingFee,
     total,
     voucherCode: promotionInfo?.voucherCode,
     promotionId: promotionInfo?.promotionId,
@@ -168,6 +189,7 @@ export function mapBaristaOrderResponse(order: {
   status: OrderStatus;
   subtotal: Prisma.Decimal;
   discount: Prisma.Decimal;
+  shippingFee?: Prisma.Decimal | number;
   total: Prisma.Decimal;
   notes?: string | null;
   createdAt: Date;
@@ -204,6 +226,8 @@ export function mapBaristaOrderResponse(order: {
     status: order.status,
     subtotal: order.subtotal.toNumber(),
     discount: order.discount.toNumber(),
+    shippingFee:
+      order.shippingFee !== undefined ? Number(order.shippingFee) : 0,
     total: order.total.toNumber(),
     notes: order.notes ?? null,
     createdAt: order.createdAt.toISOString(),

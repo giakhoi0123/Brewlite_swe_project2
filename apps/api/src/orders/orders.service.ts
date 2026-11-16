@@ -1094,6 +1094,7 @@ export class OrdersService {
         status: OrderStatus.PENDING,
         subtotal: calculatedPricing.subtotal,
         discount: calculatedPricing.discount,
+        shippingFee: calculatedPricing.shippingFee,
         total: calculatedPricing.total,
         voucherCode: calculatedPricing.voucherCode ?? null,
         promotionId: calculatedPricing.promotionId ?? null,

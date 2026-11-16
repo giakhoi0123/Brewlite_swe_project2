@@ -36,7 +36,8 @@ describe('OrdersController Security & Unit Tests (Task 5.1 - Lê Quang Điệp)'
     status: OrderStatus.PENDING,
     subtotal: 50000,
     discount: 10000,
-    total: 40000,
+    shippingFee: 15000,
+    total: 55000,
     createdAt: '2026-11-08T08:00:00.000Z',
     items: [
       {

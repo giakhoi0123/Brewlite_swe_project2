@@ -263,7 +263,7 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     const { user, token } = await createTestCustomer(100); // Có 100 điểm
     const { product, option, ingredient } = await createTestProductFixture(1000);
 
-    // Đơn 1 ly x 40.000 VNĐ, đổi 20 điểm (20.000 VNĐ) -> Phải thanh toán 20.000 VNĐ
+    // Đơn 1 ly x 40.000 VNĐ, đổi 20 điểm (20.000 VNĐ) + phí giao hàng 15.000 VNĐ -> Phải thanh toán 35.000 VNĐ
     const res = await request(app.getHttpServer())
       .post('/api/orders')
       .set('Authorization', `Bearer ${token}`)
@@ -283,8 +283,11 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     expect(order.pointsEarned).toBe(0);
     expect(order.subtotal.toNumber()).toBe(40000);
     expect(order.discount.toNumber()).toBe(20000);
-    expect(order.total.toNumber()).toBe(20000);
-    expect(order.total.toNumber()).toBe(order.subtotal.toNumber() - order.discount.toNumber());
+    expect(order.shippingFee.toNumber()).toBe(15000);
+    expect(order.total.toNumber()).toBe(35000);
+    expect(order.total.toNumber()).toBe(
+      order.subtotal.toNumber() - order.discount.toNumber() + order.shippingFee.toNumber(),
+    );
 
     // 2. Kiểm tra User loyaltyPoints giảm từ 100 -> 80
     const updatedUser = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
@@ -440,7 +443,8 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     // Đơn 1 ly x 40.000 VNĐ:
     // - Voucher 10% = 4.000 VNĐ
     // - Points 15 điểm = 15.000 VNĐ
-    // - Tổng discount = 19.000 VNĐ -> Total = 21.000 VNĐ
+    // - Phí giao hàng = 15.000 VNĐ
+    // - Tổng discount = 19.000 VNĐ -> Total = 36.000 VNĐ
     const res = await request(app.getHttpServer())
       .post('/api/orders')
       .set('Authorization', `Bearer ${token}`)
@@ -457,7 +461,8 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
     const orderDb = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
     expect(orderDb.subtotal.toNumber()).toBe(40000);
     expect(orderDb.discount.toNumber()).toBe(19000);
-    expect(orderDb.total.toNumber()).toBe(21000);
+    expect(orderDb.shippingFee.toNumber()).toBe(15000);
+    expect(orderDb.total.toNumber()).toBe(36000);
     expect(orderDb.pointsRedeemed).toBe(15);
     expect(orderDb.voucherCode).toBe('LOYALTY10');
 
@@ -507,17 +512,17 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
       .set('Authorization', `Bearer ${baristaToken}`)
       .expect(200);
 
-    // Xác minh điểm được cộng: 40.000 VNĐ = 4 điểm -> 50 + 4 = 54 điểm
+    // Xác minh điểm được cộng: 40.000 + 15.000 ship = 55.000 VNĐ = 5 điểm -> 50 + 5 = 55 điểm
     const userDb = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
-    expect(userDb.loyaltyPoints).toBe(54);
+    expect(userDb.loyaltyPoints).toBe(55);
 
     const orderDb = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
-    expect(orderDb.pointsEarned).toBe(4);
+    expect(orderDb.pointsEarned).toBe(5);
 
     // Có đúng 1 log EARN
     const logs = await prisma.loyaltyTransaction.findMany({ where: { userId: user.id } });
     expect(logs.length).toBe(1);
-    expect(logs[0].points).toBe(4);
+    expect(logs[0].points).toBe(5);
 
     // REPLAY COMPLETE (LẦN 2) - Idempotent
     await request(app.getHttpServer())
@@ -527,7 +532,7 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
 
     // Điểm KHÔNG bị cộng lần 2
     const userDb2 = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
-    expect(userDb2.loyaltyPoints).toBe(54);
+    expect(userDb2.loyaltyPoints).toBe(55);
 
     // Vẫn chỉ có 1 log duy nhất
     const logs2 = await prisma.loyaltyTransaction.findMany({ where: { userId: user.id } });
@@ -563,13 +568,13 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
       ordersService.transitionOrderStatus(orderId, OrderStatus.COMPLETED, { role: UserRole.BARISTA }),
     ]);
 
-    // Điểm chỉ tăng 4 điểm: 10 + 4 = 14 điểm (KHÔNG THỂ THÀNH 18 ĐIỂM)
+    // Điểm chỉ tăng 5 điểm (55.000 VNĐ): 10 + 5 = 15 điểm (KHÔNG THỂ THÀNH 20 ĐIỂM)
     const userDb = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
-    expect(userDb.loyaltyPoints).toBe(14);
+    expect(userDb.loyaltyPoints).toBe(15);
 
     const logs = await prisma.loyaltyTransaction.findMany({ where: { userId: user.id } });
     expect(logs.length).toBe(1);
-    expect(logs[0].points).toBe(4);
+    expect(logs[0].points).toBe(5);
   });
 
   // ============================================================================
@@ -706,7 +711,8 @@ describe('Orders Loyalty & Transaction PostgreSQL Integration (Task 5.1 - Sectio
       .expect(200);
 
     expect(detailRes.body.id).toBe(orderId);
-    expect(detailRes.body.total).toBe(30000);
+    expect(detailRes.body.shippingFee).toBe(15000);
+    expect(detailRes.body.total).toBe(45000);
     expect(detailRes.body.pointsRedeemed).toBe(10);
     const leakedDetailKeys = containsSensitiveKeys(detailRes.body, forbiddenSensitiveKeys);
     expect(leakedDetailKeys).toEqual([]);
