@@ -28,6 +28,7 @@ interface Order {
   orderNumber?: string;
   subtotal?: number;
   discount?: number;
+  shippingFee?: number;
   total?: number;
   totalAmount: number;
   discountAmount: number;
@@ -555,6 +556,17 @@ export default function OrderHistoryPage() {
                         0
                       ).toLocaleString('vi-VN')}{' '}
                       VNĐ
+                    </span>
+                  </div>
+                )}
+
+                {selectedOrder.shippingFee !== undefined && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>Phí giao hàng:</span>
+                    <span>
+                      {selectedOrder.shippingFee === 0
+                        ? 'Miễn phí'
+                        : `${selectedOrder.shippingFee.toLocaleString('vi-VN')} VNĐ`}
                     </span>
                   </div>
                 )}
