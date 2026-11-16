@@ -24,11 +24,14 @@ export default function VnpayReturnPage() {
     "Đang xác nhận kết quả thanh toán với máy chủ...",
   );
   const [invalidReturn, setInvalidReturn] = useState(false);
+  const [pollError, setPollError] = useState(false);
   const cleared = useRef(false);
 
   useEffect(() => {
     if (loading) return;
+    setPollError(false);
     if (!user) {
+      setPollError(true);
       setMessage("Vui lòng đăng nhập lại để xem trạng thái giao dịch.");
       return;
     }
@@ -101,6 +104,7 @@ export default function VnpayReturnPage() {
         timer = setTimeout(() => void poll(attempt + 1), POLL_INTERVAL_MS);
       } catch (error) {
         if (cancelled) return;
+        setPollError(true);
         setMessage(
           error instanceof CheckoutApiError
             ? error.message
@@ -117,7 +121,7 @@ export default function VnpayReturnPage() {
   }, [clearCart, loading, token, user]);
 
   const paid = payment?.paymentStatus === "PAID";
-  const failed = payment?.paymentStatus === "FAILED" || invalidReturn;
+  const failed = payment?.paymentStatus === "FAILED" || invalidReturn || pollError;
 
   return (
     <div className="max-w-[640px] mx-auto px-4 py-16">
