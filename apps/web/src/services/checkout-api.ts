@@ -33,6 +33,7 @@ export interface OrderResponse {
   status: "PENDING" | "PAID" | "CANCELLED";
   subtotal: number;
   discount: number;
+  shippingFee?: number;
   total: number;
   createdAt: string;
 }
@@ -54,6 +55,16 @@ export interface PaymentResponse {
   processedAt: string | null;
   checkoutUrl: string | null;
   expiresAt: string | null;
+}
+
+function isPersistedPaymentOutcome(
+  res: Response,
+  data: unknown,
+): data is PaymentResponse {
+  return (
+    res.status === 402 &&
+    Boolean(data && typeof (data as PaymentResponse).paymentStatus === "string")
+  );
 }
 
 export class CheckoutApiError extends Error {
@@ -189,8 +200,8 @@ export async function processPaymentApi(
     // A determinate decline is an accepted and persisted Payment outcome, not
     // a transport/API failure. Return its body so Checkout can retry the same
     // Order with a new Idempotency-Key.
-    if (res.status === 402 && data) {
-      return data as PaymentResponse;
+    if (isPersistedPaymentOutcome(res, data)) {
+      return data;
     }
 
     if (!res.ok) {
@@ -253,6 +264,9 @@ export async function getPaymentStatusApi(
       .get("content-type")
       ?.includes("application/json");
     const data = isJson ? await res.json() : null;
+    if (isPersistedPaymentOutcome(res, data)) {
+      return data;
+    }
     if (!res.ok) {
       throw new CheckoutApiError(
         data?.message ||

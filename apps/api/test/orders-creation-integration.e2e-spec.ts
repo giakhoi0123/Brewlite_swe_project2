@@ -292,7 +292,8 @@ describe('Orders Creation PostgreSQL Integration (Task 5.1 - Lê Quang Điệp)'
     expect(result.status).toBe(OrderStatus.PENDING);
     expect(result.subtotal).toBe(80000); // (30000 + 0 + 10000) * 2 = 80000
     expect(result.discount).toBe(0);
-    expect(result.total).toBe(80000);
+    expect(result.shippingFee).toBe(15000);
+    expect(result.total).toBe(95000);
 
     // 2. Kiểm tra Order trong DB
     const savedOrder = await prisma.order.findUnique({

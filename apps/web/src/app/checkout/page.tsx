@@ -114,7 +114,6 @@ export default function CheckoutPage() {
     () => computeCartSummary(items, voucherCode),
     [items, voucherCode],
   );
-  const checkoutTotal = Math.max(0, summary.subtotal - summary.discount);
   const cartSignature = useMemo(
     () => buildCartSignature(items, voucherCode),
     [items, voucherCode],
@@ -561,12 +560,21 @@ export default function CheckoutPage() {
                 </div>
               )}
 
+              <div className="flex justify-between text-on-surface-variant">
+                <span>Phí giao hàng:</span>
+                <span className="font-medium text-on-surface">
+                  {summary.shipping === 0
+                    ? "Miễn phí"
+                    : formatCurrency(summary.shipping)}
+                </span>
+              </div>
+
               <div className="flex justify-between items-baseline pt-2 border-t border-outline-variant/30">
                 <span className="font-bold text-body-md text-on-surface">
                   Tổng cộng:
                 </span>
                 <span className="font-display text-headline-sm font-bold text-secondary">
-                  {formatCurrency(checkoutTotal)}
+                  {formatCurrency(summary.total)}
                 </span>
               </div>
               <p className="text-[11px] text-outline text-right italic">
@@ -589,7 +597,7 @@ export default function CheckoutPage() {
                 <>
                   <Lock className="w-4 h-4" />
                   <span>
-                    THANH TOÁN QUA VNPAY ({formatCurrency(checkoutTotal)})
+                    THANH TOÁN QUA VNPAY ({formatCurrency(summary.total)})
                   </span>
                 </>
               )}

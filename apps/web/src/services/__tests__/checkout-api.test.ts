@@ -127,4 +127,30 @@ describe("checkout-api service", () => {
       }),
     );
   });
+
+  it("returns a persisted HTTP 402 FAILED status when polling after VNPay cancellation", async () => {
+    const failed = {
+      paymentId: "30000000-0000-4000-8000-000000000002",
+      orderId: "10000000-0000-4000-8000-000000000002",
+      method: "VNPAY",
+      amount: 79000,
+      paymentStatus: "FAILED",
+      orderStatus: "PAYMENT_FAILED",
+      resultCode: "PAYMENT_DECLINED",
+      retryable: true,
+      processedAt: "2026-11-16T14:00:00.000Z",
+      checkoutUrl: null,
+      expiresAt: "2026-11-16T14:15:00.000Z",
+    };
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 402,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => failed,
+    });
+
+    await expect(
+      getPaymentStatusApi(failed.paymentId, "jwt-token"),
+    ).resolves.toEqual(failed);
+  });
 });

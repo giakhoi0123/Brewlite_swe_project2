@@ -127,9 +127,10 @@ describe("CheckoutPage", () => {
     expect(screen.getByText("Xác nhận thanh toán")).toBeInTheDocument();
     expect(screen.getByText("Cà phê đen đá")).toBeInTheDocument();
     expect(screen.getByText("Khách hàng thử nghiệm")).toBeInTheDocument();
-    expect(screen.queryByText(/Phí vận chuyển/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Phí giao hàng:")).toBeInTheDocument();
+    expect(screen.getByText(/15\.000/)).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /THANH TOÁN QUA VNPAY.*50\.000/i }),
+      screen.getByRole("button", { name: /THANH TOÁN QUA VNPAY.*65\.000/i }),
     ).toBeInTheDocument();
   });
 
@@ -139,7 +140,8 @@ describe("CheckoutPage", () => {
       status: "PENDING",
       subtotal: 50000,
       discount: 0,
-      total: 50000,
+      shippingFee: 15000,
+      total: 65000,
       createdAt: new Date().toISOString(),
     });
 
@@ -147,7 +149,7 @@ describe("CheckoutPage", () => {
       paymentId: "pay-30000000-0000-4000-8000-000000000001",
       orderId: "ord-10000000-0000-4000-8000-000000000001",
       method: "VNPAY",
-      amount: 50000,
+      amount: 65000,
       paymentStatus: "PAID",
       orderStatus: "PAID",
       resultCode: "PAYMENT_PAID",
@@ -197,7 +199,8 @@ describe("CheckoutPage", () => {
       status: "PENDING",
       subtotal: 50000,
       discount: 0,
-      total: 50000,
+      shippingFee: 15000,
+      total: 65000,
       createdAt: new Date().toISOString(),
     });
 
@@ -206,7 +209,7 @@ describe("CheckoutPage", () => {
         paymentId: "pay-123",
         orderId: "ord-123",
         method: "VNPAY",
-        amount: 50000,
+        amount: 65000,
         paymentStatus: "FAILED",
         orderStatus: "PAYMENT_FAILED",
         resultCode: "PAYMENT_DECLINED",
@@ -217,7 +220,7 @@ describe("CheckoutPage", () => {
         paymentId: "pay-456",
         orderId: "ord-123",
         method: "VNPAY",
-        amount: 50000,
+        amount: 65000,
         paymentStatus: "PAID",
         orderStatus: "PAID",
         resultCode: "PAYMENT_PAID",
@@ -362,5 +365,31 @@ describe("CheckoutPage", () => {
     expect(
       (checkoutApi.processPaymentApi as jest.Mock).mock.calls[0][0],
     ).toBe("ord-fresh");
+  });
+
+  it("shows free shipping when cart subtotal reaches 100.000đ", () => {
+    (useCart as jest.Mock).mockReturnValue({
+      isReady: true,
+      isChecking: false,
+      canCheckout: true,
+      items: [{ ...mockCartItem, quantity: 4 }],
+      totalQuantity: 4,
+      totalPrice: 100000,
+      voucherCode: null,
+      addItem: jest.fn(),
+      updateQuantity: jest.fn(),
+      updateSize: jest.fn(),
+      removeItem: jest.fn(),
+      clearCart: mockClearCart,
+      setVoucherCode: jest.fn(),
+    });
+
+    render(<CheckoutPage />);
+
+    expect(screen.getByText("Phí giao hàng:")).toBeInTheDocument();
+    expect(screen.getByText("Miễn phí")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /THANH TOÁN QUA VNPAY.*100\.000/i }),
+    ).toBeInTheDocument();
   });
 });
