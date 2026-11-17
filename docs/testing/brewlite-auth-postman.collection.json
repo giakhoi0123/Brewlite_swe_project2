@@ -8,23 +8,28 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:3005/api"
+      "value": "http://localhost:3005/api",
+      "type": "string"
     },
     {
       "key": "testEmail",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "accessToken",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "oldToken",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "resetToken",
-      "value": "invalid-token-demo"
+      "value": "invalid-token-demo",
+      "type": "string"
     }
   ],
   "item": [
@@ -315,39 +320,7 @@
       "response": []
     },
     {
-      "name": "07. Me - Khong co Token (401)",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "auth": {
-          "type": "noauth"
-        },
-        "method": "GET",
-        "url": {
-          "raw": "{{baseUrl}}/auth/me",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "auth",
-            "me"
-          ]
-        },
-        "header": []
-      },
-      "response": []
-    },
-    {
-      "name": "08. Change Password - Sai mat khau hien tai (400)",
+      "name": "07. Change Password - Sai mat khau hien tai (400)",
       "event": [
         {
           "listen": "test",
@@ -400,7 +373,7 @@
       "response": []
     },
     {
-      "name": "09. Change Password - Thanh cong (200)",
+      "name": "08. Change Password - Thanh cong (200)",
       "event": [
         {
           "listen": "test",
@@ -453,7 +426,7 @@
       "response": []
     },
     {
-      "name": "10. Me - Token cu bi vo hieu hoa sau doi mat khau (401)",
+      "name": "09. Me - Token cu bi vo hieu hoa sau doi mat khau (401)",
       "event": [
         {
           "listen": "test",
@@ -492,7 +465,7 @@
       "response": []
     },
     {
-      "name": "11. Login lai bang mat khau moi (200)",
+      "name": "10. Login lai bang mat khau moi (200)",
       "event": [
         {
           "listen": "test",
@@ -537,7 +510,7 @@
       "response": []
     },
     {
-      "name": "12. Forgot Password - Chinh sach chong lo email (200)",
+      "name": "11. Forgot Password - Chinh sach chong lo email (200)",
       "event": [
         {
           "listen": "test",
@@ -583,7 +556,7 @@
       "response": []
     },
     {
-      "name": "13. Reset Password - Token khong hop le / het han (400)",
+      "name": "12. Reset Password - Token khong hop le / het han (400)",
       "event": [
         {
           "listen": "test",
@@ -626,7 +599,7 @@
       "response": []
     },
     {
-      "name": "14. Logout - Xoa cookie phien (200)",
+      "name": "13. Logout - Xoa cookie phien (200)",
       "event": [
         {
           "listen": "test",
@@ -648,6 +621,38 @@
           "path": [
             "auth",
             "logout"
+          ]
+        },
+        "header": []
+      },
+      "response": []
+    },
+    {
+      "name": "14. Me - Khong co Token (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/auth/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "me"
           ]
         },
         "header": []

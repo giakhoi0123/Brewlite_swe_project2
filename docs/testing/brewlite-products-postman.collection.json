@@ -8,27 +8,33 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:3005/api"
+      "value": "http://localhost:3005/api",
+      "type": "string"
     },
     {
       "key": "sampleProductId",
-      "value": "a0000000-0000-0000-0000-000000000001"
+      "value": "a0000000-0000-0000-0000-000000000001",
+      "type": "string"
     },
     {
       "key": "sampleSizeId",
-      "value": "b0000000-0000-0000-0000-000000000001"
+      "value": "b0000000-0000-0000-0000-000000000001",
+      "type": "string"
     },
     {
       "key": "sampleToppingId",
-      "value": "b0000000-0000-0000-0000-000000000003"
+      "value": "b0000000-0000-0000-0000-000000000003",
+      "type": "string"
     },
     {
       "key": "outOfStockProductId",
-      "value": "a0000000-0000-0000-0000-000000000007"
+      "value": "a0000000-0000-0000-0000-000000000007",
+      "type": "string"
     },
     {
       "key": "outOfStockSizeId",
-      "value": "b0000000-0000-0000-0000-000000000020"
+      "value": "b0000000-0000-0000-0000-000000000020",
+      "type": "string"
     }
   ],
   "item": [

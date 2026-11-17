@@ -8,68 +8,84 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:3005/api"
+      "value": "http://localhost:3005/api",
+      "type": "string"
     },
     {
       "key": "customerToken",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "otherEmail",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "otherToken",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "orderId",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "otherOrderId",
-      "value": "00000000-0000-4000-8000-000000000999"
+      "value": "00000000-0000-4000-8000-000000000999",
+      "type": "string"
     },
     {
       "key": "idempotencyKey",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "retryIdempotencyKey",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "paymentId",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpayTmnCode",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpayTxnRef",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpayAmount",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpayHashSecret",
       "value": "TISVGUPNVUDXOKWSHTJZWZKZCMXGNDTH",
+      "type": "string",
       "description": "Gia tri VNPAY_HASH_SECRET Sandbox mac dinh tu .env.example de kiem thu IPN/Return co chu ky hop le."
     },
     {
       "key": "vnpSecureHash",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpWrongAmount",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpMissingTxnRef",
-      "value": "00000000000000000000000000000000"
+      "value": "00000000000000000000000000000000",
+      "type": "string"
     }
   ],
   "item": [
