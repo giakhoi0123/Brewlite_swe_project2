@@ -127,10 +127,9 @@ describe("CheckoutPage", () => {
     expect(screen.getByText("Xác nhận thanh toán")).toBeInTheDocument();
     expect(screen.getByText("Cà phê đen đá")).toBeInTheDocument();
     expect(screen.getByText("Khách hàng thử nghiệm")).toBeInTheDocument();
-    expect(screen.getByText("Phí giao hàng:")).toBeInTheDocument();
-    expect(screen.getByText(/15\.000/)).toBeInTheDocument();
+    expect(screen.queryByText("Phí giao hàng:")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /THANH TOÁN QUA VNPAY.*65\.000/i }),
+      screen.getByRole("button", { name: /THANH TOÁN QUA VNPAY.*50\.000/i }),
     ).toBeInTheDocument();
   });
 
@@ -367,7 +366,7 @@ describe("CheckoutPage", () => {
     ).toBe("ord-fresh");
   });
 
-  it("shows free shipping when cart subtotal reaches 100.000đ", () => {
+  it("does not show or charge shipping fee (in-store sales)", () => {
     (useCart as jest.Mock).mockReturnValue({
       isReady: true,
       isChecking: false,
@@ -386,8 +385,7 @@ describe("CheckoutPage", () => {
 
     render(<CheckoutPage />);
 
-    expect(screen.getByText("Phí giao hàng:")).toBeInTheDocument();
-    expect(screen.getByText("Miễn phí")).toBeInTheDocument();
+    expect(screen.queryByText("Phí giao hàng:")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /THANH TOÁN QUA VNPAY.*100\.000/i }),
     ).toBeInTheDocument();

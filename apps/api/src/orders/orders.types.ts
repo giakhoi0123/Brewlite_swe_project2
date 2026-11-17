@@ -30,7 +30,7 @@ import { OptionType, OrderStatus, Prisma, UserRole } from '@prisma/client';
  *       Ràng buộc: 0 <= Order.discount <= Order.subtotal.
  *
  *    f. Phí giao hàng (Order.shippingFee):
- *       0 với đơn từ 100.000đ trở lên, 15.000đ với đơn có subtotal > 0 và < 100.000đ.
+ *       Luôn bằng 0 (mô hình bán trực tiếp, không giao hàng). Giữ cột để tương thích dữ liệu cũ.
  *
  *    g. Tổng thanh toán đơn hàng (Order.total):
  *       Order.total = Order.subtotal - Order.discount + Order.shippingFee

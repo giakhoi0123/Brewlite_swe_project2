@@ -560,14 +560,11 @@ export default function OrderHistoryPage() {
                   </div>
                 )}
 
-                {selectedOrder.shippingFee !== undefined && (
+                {/* Chỉ hiển thị cho đơn cũ còn phí giao hàng; đơn mới bán trực tiếp luôn = 0 */}
+                {!!selectedOrder.shippingFee && selectedOrder.shippingFee > 0 && (
                   <div className="flex justify-between text-gray-600">
                     <span>Phí giao hàng:</span>
-                    <span>
-                      {selectedOrder.shippingFee === 0
-                        ? 'Miễn phí'
-                        : `${selectedOrder.shippingFee.toLocaleString('vi-VN')} VNĐ`}
-                    </span>
+                    <span>{`${selectedOrder.shippingFee.toLocaleString('vi-VN')} VNĐ`}</span>
                   </div>
                 )}
 

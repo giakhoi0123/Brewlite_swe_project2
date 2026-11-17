@@ -97,19 +97,18 @@ describe('CartView', () => {
     const line = await screen.findByTestId('cart-line-PROD_03');
     expect(within(line).getByText(/Thêm 1 shot Espresso Robusta/)).toBeInTheDocument();
     expect(within(line).getByText(/Ghi chú: Ít đá/)).toBeInTheDocument();
-    // (25.000 + 10.000) x 2 + 29.000 = 99.000 -> chưa đủ freeship
+    // (25.000 + 10.000) x 2 + 29.000 = 99.000, không phí giao hàng
     expect(screen.getByTestId('cart-count-badge')).toHaveTextContent('3 sản phẩm');
     expect(screen.getByTestId('summary-subtotal')).toHaveTextContent('99.000');
-    expect(screen.getByTestId('summary-shipping')).toHaveTextContent('15.000');
-    expect(screen.getByTestId('summary-total')).toHaveTextContent('114.000');
+    expect(screen.queryByTestId('summary-shipping')).not.toBeInTheDocument();
+    expect(screen.getByTestId('summary-total')).toHaveTextContent('99.000');
   });
 
-  it('tăng số lượng cập nhật thành tiền và được freeship', async () => {
+  it('tăng số lượng cập nhật thành tiền và tổng cộng', async () => {
     seedCart();
     renderCart();
     await userEvent.click(await screen.findByRole('button', { name: 'Tăng số lượng Bạc Xỉu 3 Tầng Sài Gòn' }));
     expect(within(screen.getByTestId('cart-line-PROD_01')).getByTestId('line-subtotal')).toHaveTextContent('58.000');
-    expect(screen.getByTestId('summary-shipping')).toHaveTextContent('Miễn phí');
     expect(screen.getByTestId('summary-total')).toHaveTextContent('128.000');
   });
 
@@ -186,7 +185,7 @@ describe('CartView', () => {
     await userEvent.type(input, 'coffee10');
     await userEvent.click(screen.getByRole('button', { name: 'Áp dụng' }));
     expect(await screen.findByTestId('summary-discount')).toHaveTextContent('10.000');
-    // 99.000 - 10.000 + 15.000
-    expect(screen.getByTestId('summary-total')).toHaveTextContent('104.000');
+    // 99.000 - 10.000 (không phí giao hàng)
+    expect(screen.getByTestId('summary-total')).toHaveTextContent('89.000');
   });
 });

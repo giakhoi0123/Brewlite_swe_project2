@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
-import { ArrowLeft, ArrowRight, BadgePercent, ReceiptText, Snowflake, X, Zap } from 'lucide-react';
-import { CartSummary, FREE_SHIPPING_THRESHOLD } from '../../lib/cart-summary';
+import { ArrowLeft, ArrowRight, BadgePercent, ReceiptText, Snowflake, X } from 'lucide-react';
+import { CartSummary } from '../../lib/cart-summary';
 import { formatCurrency } from '../../utils/format';
 
 const API_URL =
@@ -22,7 +22,6 @@ interface OrderSummaryProps {
 }
 
 const PERKS = [
-  { icon: Zap, label: 'Giao 20 phút' },
   { icon: Snowflake, label: 'Giữ trọn vị' },
   { icon: BadgePercent, label: 'Tích điểm 5%' },
 ];
@@ -70,8 +69,6 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({ summary, onApplyVouc
     }
   };
 
-  const remainingForFreeShip = FREE_SHIPPING_THRESHOLD - summary.subtotal;
-
   return (
     <div className="p-space-md lg:p-space-lg rounded-xl bg-surface-container-lowest shadow-[0_8px_24px_rgba(43,24,16,0.06)] flex flex-col gap-space-md">
       <div className="flex items-center justify-between pb-space-xs">
@@ -117,26 +114,11 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({ summary, onApplyVouc
           </p>
         )}
 
-        <div className="flex items-center justify-between text-on-surface-variant">
-          <dt className="flex flex-col">
-            <span>Phí giao hàng</span>
-            <span className="font-display text-label-sm text-outline">
-              {remainingForFreeShip > 0
-                ? `Mua thêm ${formatCurrency(remainingForFreeShip)} để được freeship`
-                : `Freeship đơn từ ${formatCurrency(FREE_SHIPPING_THRESHOLD)}`}
-            </span>
-          </dt>
-          <dd data-testid="summary-shipping" className={`font-bold ${summary.shipping ? 'text-on-surface' : 'text-secondary'}`}>
-            {summary.shipping ? formatCurrency(summary.shipping) : 'Miễn phí'}
-          </dd>
-        </div>
-
         <div className="h-px bg-surface-container-high my-space-xs" />
 
         <div className="flex items-baseline justify-between gap-space-sm pt-1">
           <dt className="flex flex-col">
             <span className="font-display text-headline-sm font-bold text-on-surface">Tổng cộng</span>
-            <span className="font-display text-label-sm text-outline">Đã bao gồm VAT</span>
           </dt>
           <dd data-testid="summary-total" className="font-display text-headline-lg font-extrabold text-primary-container tracking-tight text-right">
             {formatCurrency(summary.total)}
@@ -191,7 +173,7 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({ summary, onApplyVouc
         </Link>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 bg-surface-container-low p-space-sm rounded-lg text-center">
+      <div className="grid grid-cols-2 gap-2 bg-surface-container-low p-space-sm rounded-lg text-center">
         {PERKS.map(({ icon: Icon, label }) => (
           <div key={label} className="flex flex-col items-center">
             <Icon className="w-5 h-5 text-secondary" />

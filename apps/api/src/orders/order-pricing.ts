@@ -28,22 +28,6 @@ export interface OrderItemCalculationInput {
   notes?: string;
 }
 
-export const FREE_SHIPPING_THRESHOLD = 100000;
-export const SHIPPING_FEE = 15000;
-
-export function calculateShippingFee(
-  subtotal: Prisma.Decimal | number | string,
-): Prisma.Decimal {
-  const subtotalDecimal = new Prisma.Decimal(subtotal);
-  if (
-    subtotalDecimal.lte(0) ||
-    subtotalDecimal.gte(FREE_SHIPPING_THRESHOLD)
-  ) {
-    return new Prisma.Decimal(0);
-  }
-  return new Prisma.Decimal(SHIPPING_FEE);
-}
-
 /**
  * Ánh xạ kết quả lưu trữ Order sang CreateOrderResult cho client.
  * Tuyệt đối không để lộ dữ liệu nội bộ như stock, version, reservation ID.
@@ -142,7 +126,7 @@ export function calculateItemPrice(
 
 /**
  * Tính toán tổng tiền đơn hàng, áp dụng discount (nếu có) và cap discount an toàn.
- * Đảm bảo: 0 <= discount <= subtotal và total = subtotal - discount + shippingFee.
+ * Đảm bảo: 0 <= discount <= subtotal và total = subtotal - discount (shippingFee luôn = 0).
  */
 export function calculateOrderPricing(
   items: CalculatedItemPrice[],
@@ -165,8 +149,10 @@ export function calculateOrderPricing(
     discount = subtotal;
   }
 
-  const shippingFee = calculateShippingFee(subtotal);
-  const total = subtotal.minus(discount).plus(shippingFee);
+  // Mô hình bán trực tiếp tại quán: không thu phí giao hàng.
+  // Giữ field shippingFee = 0 để tương thích cột DB và contract API hiện có.
+  const shippingFee = new Prisma.Decimal(0);
+  const total = subtotal.minus(discount);
 
   return {
     items,

@@ -1,6 +1,6 @@
 import { DEFAULT_CUSTOMIZATION } from '../../data/menu-options';
 import { addCartItem } from '../cart';
-import { computeCartSummary, SHIPPING_FEE, validateVoucher } from '../cart-summary';
+import { computeCartSummary, validateVoucher } from '../cart-summary';
 
 function cartWorth(price: number, quantity = 1) {
   return addCartItem([], {
@@ -14,17 +14,13 @@ function cartWorth(price: number, quantity = 1) {
 }
 
 describe('computeCartSummary', () => {
-  it('giỏ trống không tính phí giao', () => {
-    expect(computeCartSummary([], null)).toMatchObject({ subtotal: 0, shipping: 0, total: 0 });
+  it('giỏ trống có tổng bằng 0', () => {
+    expect(computeCartSummary([], null)).toMatchObject({ subtotal: 0, total: 0 });
   });
 
-  it('dưới 100k tính phí giao, từ 100k miễn phí', () => {
-    expect(computeCartSummary(cartWorth(30000, 2), null)).toMatchObject({
-      subtotal: 60000,
-      shipping: SHIPPING_FEE,
-      total: 60000 + SHIPPING_FEE,
-    });
-    expect(computeCartSummary(cartWorth(50000, 2), null)).toMatchObject({ shipping: 0, total: 100000 });
+  it('không cộng phí giao hàng vào tổng (bán trực tiếp)', () => {
+    expect(computeCartSummary(cartWorth(30000, 2), null)).toMatchObject({ subtotal: 60000, total: 60000 });
+    expect(computeCartSummary(cartWorth(50000, 2), null)).toMatchObject({ subtotal: 100000, total: 100000 });
   });
 
   it('áp dụng voucher cố định và phần trăm có trần', () => {
