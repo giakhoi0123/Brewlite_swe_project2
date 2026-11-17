@@ -560,15 +560,6 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              <div className="flex justify-between text-on-surface-variant">
-                <span>Phí giao hàng:</span>
-                <span className="font-medium text-on-surface">
-                  {summary.shipping === 0
-                    ? "Miễn phí"
-                    : formatCurrency(summary.shipping)}
-                </span>
-              </div>
-
               <div className="flex justify-between items-baseline pt-2 border-t border-outline-variant/30">
                 <span className="font-bold text-body-md text-on-surface">
                   Tổng cộng:

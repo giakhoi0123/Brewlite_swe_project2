@@ -286,8 +286,8 @@ describe('Orders HTTP API Integration (POST /api/orders) (Task 5.1 - Lê Quang �
     expect(response.body.status).toBe(OrderStatus.PENDING);
     expect(response.body.subtotal).toBe(80000); // (30000 + 0 + 10000) * 2 = 80000
     expect(response.body.discount).toBe(0);
-    expect(response.body.shippingFee).toBe(15000);
-    expect(response.body.total).toBe(95000);
+    expect(response.body.shippingFee).toBe(0);
+    expect(response.body.total).toBe(80000);
     expect(response.body.createdAt).toBeDefined();
 
     // Items và option snapshots cho confirmation screen
@@ -450,11 +450,11 @@ describe('Orders HTTP API Integration (POST /api/orders) (Task 5.1 - Lê Quang �
     expect(response.status).toBe(201);
     createdOrderIds.push(response.body.id || response.body.orderId);
 
-    // Server tính từ basePrice 30000 + size 0 + shippingFee 15000 = 45000
+    // Server tính từ basePrice 30000 + size 0 (không phí giao hàng) = 30000
     expect(response.body.subtotal).toBe(30000);
     expect(response.body.discount).toBe(0);
-    expect(response.body.shippingFee).toBe(15000);
-    expect(response.body.total).toBe(45000);
+    expect(response.body.shippingFee).toBe(0);
+    expect(response.body.total).toBe(30000);
   });
 
   // ============================================================================

@@ -1,8 +1,5 @@
 import { CartItem } from './cart';
 
-export const FREE_SHIPPING_THRESHOLD = 100000;
-export const SHIPPING_FEE = 15000;
-
 export interface Voucher {
   code: string;
   label: string;
@@ -76,7 +73,6 @@ export interface CartSummary {
   /** Mã đã nhập nhưng đơn hiện không đủ điều kiện (ví dụ sau khi giảm số lượng). */
   voucherInactive: boolean;
   discount: number;
-  shipping: number;
   total: number;
 }
 
@@ -85,15 +81,14 @@ export function computeCartSummary(items: CartItem[], voucherCode: string | null
   const subtotal = items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
   const voucher = voucherCode ? findVoucher(voucherCode) ?? null : null;
   const discount = voucher ? calcDiscount(voucher, subtotal) : 0;
-  const shipping = subtotal === 0 || subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
 
+  // Mô hình bán trực tiếp tại quán: không có phí giao hàng.
   return {
     itemCount,
     subtotal,
     voucher,
     voucherInactive: Boolean(voucher && discount === 0 && subtotal > 0),
     discount,
-    shipping,
-    total: Math.max(0, subtotal - discount + shipping),
+    total: Math.max(0, subtotal - discount),
   };
 }
