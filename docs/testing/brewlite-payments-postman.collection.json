@@ -8,77 +8,143 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:3005/api"
+      "value": "http://localhost:3005/api",
+      "type": "string"
     },
     {
       "key": "customerToken",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "otherToken",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "orderId",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "otherOrderId",
-      "value": "00000000-0000-4000-8000-000000000999"
+      "value": "00000000-0000-4000-8000-000000000999",
+      "type": "string"
     },
     {
       "key": "idempotencyKey",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "paymentId",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpayTmnCode",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpayTxnRef",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpayAmount",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpayHashSecret",
       "value": "",
+      "type": "string",
       "description": "Dien VNPAY_HASH_SECRET tu .env local de kiem thu IPN/Return co chu ky hop le."
     },
     {
       "key": "vnpOrderInfo",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpPayDate",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpTransactionNo",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpSecureHash",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpWrongAmount",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpMissingTxnRef",
-      "value": "00000000000000000000000000000000"
+      "value": "00000000000000000000000000000000",
+      "type": "string"
     }
   ],
   "item": [
     {
-      "name": "01. Login Customer 1 seed account (200)",
+      "name": "01. Create Payment - Khong co JWT (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"VNPAY\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "02. Login Customer 1 seed account (200)",
       "event": [
         {
           "listen": "test",
@@ -124,7 +190,7 @@
       "response": []
     },
     {
-      "name": "02. Register Customer 2 de test ownership 403 (201)",
+      "name": "03. Register Customer 2 de test ownership 403 (201)",
       "event": [
         {
           "listen": "prerequest",
@@ -177,7 +243,7 @@
       "response": []
     },
     {
-      "name": "03. Create Order PENDING cho Customer 1 (201)",
+      "name": "04. Create Order PENDING cho Customer 1 (201)",
       "event": [
         {
           "listen": "test",
@@ -232,7 +298,7 @@
       "response": []
     },
     {
-      "name": "04. Create Payment - Thieu Idempotency-Key (400)",
+      "name": "05. Create Payment - Thieu Idempotency-Key (400)",
       "event": [
         {
           "listen": "test",
@@ -284,7 +350,7 @@
       "response": []
     },
     {
-      "name": "05. Create Payment - Method khong phai VNPAY (400)",
+      "name": "06. Create Payment - Method khong phai VNPAY (400)",
       "event": [
         {
           "listen": "test",
@@ -321,55 +387,6 @@
         "body": {
           "mode": "raw",
           "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"CARD\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        },
-        "url": {
-          "raw": "{{baseUrl}}/payments",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "payments"
-          ]
-        }
-      },
-      "response": []
-    },
-    {
-      "name": "06. Create Payment - Khong co JWT (401)",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "auth": {
-          "type": "noauth"
-        },
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          },
-          {
-            "key": "Idempotency-Key",
-            "value": "{{$guid}}"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"VNPAY\"\n}",
           "options": {
             "raw": {
               "language": "json"

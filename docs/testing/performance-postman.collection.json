@@ -1,0 +1,556 @@
+{
+  "info": {
+    "name": "BrewLite - Performance & Load Test Suite (Happy Path)",
+    "_postman_id": "a7b1c2d3-6666-4444-8888-000000000006",
+    "description": "Bo test hieu nang (Postman Performance Runner / Newman) chi chua luong happy-path cho BrewLite API: Auth, Menu, Availability, Promotions, Loyalty, Orders va Barista Queue. Khong chua negative test 400/401/403/404 de Error Rate phan anh dung tai that.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3005/api",
+      "type": "string"
+    },
+    {
+      "key": "customerToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "customerId",
+      "value": "c0000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "baristaToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "orderId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01. Auth - Login Customer (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('Response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));",
+              "const json = pm.response.json();",
+              "pm.collectionVariables.set('customerToken', json.accessToken);",
+              "pm.collectionVariables.set('customerId', json.user.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"customer@brewlite.test\",\n  \"password\": \"Password123!\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "login"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "02. Menu - Get Products Catalog (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('Response time < 500ms (NFR-01 < 2000ms)', () => pm.expect(pm.response.responseTime).to.be.below(500));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/products",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "03. Menu - Search Products (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('Response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/products?search=Cà phê",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products"
+          ],
+          "query": [
+            {
+              "key": "search",
+              "value": "Cà phê"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "04. Menu - Get Product Detail (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('Response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/products/a0000000-0000-0000-0000-000000000001",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products",
+            "a0000000-0000-0000-0000-000000000001"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "05. Availability - Check Cart Stock (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "pm.test('Response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));",
+              "pm.expect(pm.response.json().canOrder).to.eql(true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000001\",\n      \"sizeId\": \"b0000000-0000-0000-0000-000000000001\",\n      \"toppingIds\": [],\n      \"quantity\": 1\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/products/availability",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products",
+            "availability"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "06. Promotions - Get Active Promotions (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('Response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/promotions",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "promotions"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "07. Promotions - Validate BREW20 (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "pm.test('Response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"BREW20\",\n  \"orderAmount\": 150000\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/promotions/validate",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "promotions",
+            "validate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "08. Loyalty - Get Customer Points (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('Response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/loyalty/user/{{customerId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "loyalty",
+            "user",
+            "{{customerId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "09. Orders - Create Order PENDING (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 201 Created', () => pm.response.to.have.status(201));",
+              "pm.test('Response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));",
+              "pm.collectionVariables.set('orderId', pm.response.json().id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000001\",\n      \"quantity\": 1,\n      \"selectedOptions\": [\n        \"b0000000-0000-0000-0000-000000000001\"\n      ]\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "10. Orders - Get Order Detail (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('Response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/orders/{{orderId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders",
+            "{{orderId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "11. Orders - Get Order History (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('Response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/orders/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders",
+            "me"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "12. Auth - Login Barista (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('Response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));",
+              "pm.collectionVariables.set('baristaToken', pm.response.json().accessToken);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"barista@brewlite.test\",\n  \"password\": \"Password123!\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "login"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "13. Barista - Get Queue FIFO (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('Response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{baristaToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/barista/orders?page=1&limit=20",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "barista",
+            "orders"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "20"
+            }
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

@@ -8,40 +8,80 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:3005/api"
+      "value": "http://localhost:3005/api",
+      "type": "string"
     },
     {
       "key": "customerToken",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "customerId",
-      "value": "c0000000-0000-0000-0000-000000000001"
+      "value": "c0000000-0000-0000-0000-000000000001",
+      "type": "string"
     },
     {
       "key": "otherEmail",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "otherToken",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "otherUserId",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "otherOrderId",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "redeemCode",
-      "value": ""
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
     {
-      "name": "01. Login Customer 1 seed account (200)",
+      "name": "01. Order History - Khong co JWT (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/orders/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders",
+            "me"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "02. Login Customer 1 seed account (200)",
       "event": [
         {
           "listen": "test",
@@ -87,7 +127,7 @@
       "response": []
     },
     {
-      "name": "02. Register Customer 2 de test single-use voucher & chong IDOR (201)",
+      "name": "03. Register Customer 2 de test single-use voucher & chong IDOR (201)",
       "event": [
         {
           "listen": "prerequest",
@@ -143,7 +183,7 @@
       "response": []
     },
     {
-      "name": "03. Get Active Promotions - Loai tru ma het han EXPIRED10 (200)",
+      "name": "04. Get Active Promotions - Loai tru ma het han EXPIRED10 (200)",
       "event": [
         {
           "listen": "test",
@@ -189,7 +229,7 @@
       "response": []
     },
     {
-      "name": "04. Validate Promotion - HELLOBREW hop le giam 20k (201)",
+      "name": "05. Validate Promotion - HELLOBREW hop le giam 20k (201)",
       "event": [
         {
           "listen": "test",
@@ -248,7 +288,7 @@
       "response": []
     },
     {
-      "name": "05. Validate Promotion - BREW20 giam 20% tran toi da 30k (201)",
+      "name": "06. Validate Promotion - BREW20 giam 20% tran toi da 30k (201)",
       "event": [
         {
           "listen": "test",
@@ -297,7 +337,7 @@
       "response": []
     },
     {
-      "name": "06. Validate Promotion - Khong du don toi thieu 50k (400)",
+      "name": "07. Validate Promotion - Khong du don toi thieu 50k (400)",
       "event": [
         {
           "listen": "test",
@@ -340,7 +380,7 @@
       "response": []
     },
     {
-      "name": "07. Validate Promotion - Ma het han EXPIRED10 (400)",
+      "name": "08. Validate Promotion - Ma het han EXPIRED10 (400)",
       "event": [
         {
           "listen": "test",
@@ -383,7 +423,7 @@
       "response": []
     },
     {
-      "name": "08. Validate Promotion - Ma khong ton tai (404)",
+      "name": "09. Validate Promotion - Ma khong ton tai (404)",
       "event": [
         {
           "listen": "test",
@@ -426,7 +466,7 @@
       "response": []
     },
     {
-      "name": "09. Get Loyalty Info - Diem va lich su cua Customer 1 (200)",
+      "name": "10. Get Loyalty Info - Diem va lich su cua Customer 1 (200)",
       "event": [
         {
           "listen": "test",
@@ -463,7 +503,7 @@
       "response": []
     },
     {
-      "name": "10. Redeem Points - Khong du diem (400)",
+      "name": "11. Redeem Points - Khong du diem (400)",
       "event": [
         {
           "listen": "test",
@@ -506,7 +546,7 @@
       "response": []
     },
     {
-      "name": "11. Earn Points - Cong 50 diem cho Customer 2 (201)",
+      "name": "12. Earn Points - Cong 50 diem cho Customer 2 (201)",
       "event": [
         {
           "listen": "test",
@@ -551,7 +591,7 @@
       "response": []
     },
     {
-      "name": "12. Redeem Points - Doi 50 diem thanh voucher 30k cho Customer 2 (201)",
+      "name": "13. Redeem Points - Doi 50 diem thanh voucher 30k cho Customer 2 (201)",
       "event": [
         {
           "listen": "test",
@@ -596,7 +636,7 @@
       "response": []
     },
     {
-      "name": "13. Create Order voi HELLOBREW tren Customer 2 (201)",
+      "name": "14. Create Order voi HELLOBREW tren Customer 2 (201)",
       "event": [
         {
           "listen": "test",
@@ -655,7 +695,7 @@
       "response": []
     },
     {
-      "name": "14. Validate Promotion - Chan dung lai voucher HELLOBREW da su dung (400)",
+      "name": "15. Validate Promotion - Chan dung lai voucher HELLOBREW da su dung (400)",
       "event": [
         {
           "listen": "test",
@@ -708,7 +748,7 @@
       "response": []
     },
     {
-      "name": "15. Order History - Xem lich su don cua toi /orders/me (200)",
+      "name": "16. Order History - Xem lich su don cua toi /orders/me (200)",
       "event": [
         {
           "listen": "test",
@@ -756,7 +796,7 @@
       "response": []
     },
     {
-      "name": "16. Order Detail - Xem chi tiet don cua chinh minh (200)",
+      "name": "17. Order Detail - Xem chi tiet don cua chinh minh (200)",
       "event": [
         {
           "listen": "test",
@@ -798,7 +838,7 @@
       "response": []
     },
     {
-      "name": "17. Order Detail - Chong IDOR khi Customer 1 xem don Customer 2 (404)",
+      "name": "18. Order Detail - Chong IDOR khi Customer 1 xem don Customer 2 (404)",
       "event": [
         {
           "listen": "test",
@@ -831,38 +871,6 @@
           "path": [
             "orders",
             "{{otherOrderId}}"
-          ]
-        }
-      },
-      "response": []
-    },
-    {
-      "name": "18. Order History - Khong co JWT (401)",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "auth": {
-          "type": "noauth"
-        },
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/orders/me",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "orders",
-            "me"
           ]
         }
       },

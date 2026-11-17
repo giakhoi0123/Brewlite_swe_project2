@@ -8,61 +8,151 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:3005/api"
+      "value": "http://localhost:3005/api",
+      "type": "string"
     },
     {
       "key": "customerToken",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "baristaToken",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "pendingOrderId",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "paidOrderId",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpayTmnCode",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpayTxnRef",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpayAmount",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpayHashSecret",
       "value": "",
+      "type": "string",
       "description": "Dien VNPAY_HASH_SECRET tu .env local neu muon buoc 12b ky IPN that de chuyen don sang PAID."
     },
     {
       "key": "vnpOrderInfo",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpPayDate",
-      "value": "20261115003000"
+      "value": "20261115003000",
+      "type": "string"
     },
     {
       "key": "vnpTransactionNo",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "vnpSecureHash",
-      "value": ""
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
     {
-      "name": "01. Login Customer seed account (200)",
+      "name": "01. Create Order - Khong co JWT (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000001\",\n      \"quantity\": 1,\n      \"selectedOptions\": [\n        \"b0000000-0000-0000-0000-000000000001\"\n      ]\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "02. Barista Queue - Khong co JWT (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/barista/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "barista",
+            "orders"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "03. Login Customer seed account (200)",
       "event": [
         {
           "listen": "test",
@@ -111,7 +201,7 @@
       "response": []
     },
     {
-      "name": "02. Login Barista seed account (200)",
+      "name": "04. Login Barista seed account (200)",
       "event": [
         {
           "listen": "test",
@@ -160,52 +250,7 @@
       "response": []
     },
     {
-      "name": "03. Create Order - Khong co JWT (401)",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "auth": {
-          "type": "noauth"
-        },
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"a0000000-0000-0000-0000-000000000001\",\n      \"quantity\": 1,\n      \"selectedOptions\": [\n        \"b0000000-0000-0000-0000-000000000001\"\n      ]\n    }\n  ]\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        },
-        "url": {
-          "raw": "{{baseUrl}}/orders",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "orders"
-          ]
-        }
-      },
-      "response": []
-    },
-    {
-      "name": "04. Create Order - Voucher het han EXPIRED10 (400)",
+      "name": "05. Create Order - Voucher het han EXPIRED10 (400)",
       "event": [
         {
           "listen": "test",
@@ -257,7 +302,7 @@
       "response": []
     },
     {
-      "name": "05. Create Order - Mon tam ngung phuc vu (400)",
+      "name": "06. Create Order - Mon tam ngung phuc vu (400)",
       "event": [
         {
           "listen": "test",
@@ -309,7 +354,7 @@
       "response": []
     },
     {
-      "name": "06. Create Order - Thieu ton nguyen lieu rollback (409)",
+      "name": "07. Create Order - Thieu ton nguyen lieu rollback (409)",
       "event": [
         {
           "listen": "test",
@@ -361,7 +406,7 @@
       "response": []
     },
     {
-      "name": "07. Create Order - Thanh cong tao don PENDING giu kho & tinh lai gia (201)",
+      "name": "08. Create Order - Thanh cong tao don PENDING giu kho & tinh lai gia (201)",
       "event": [
         {
           "listen": "test",
@@ -422,7 +467,7 @@
       "response": []
     },
     {
-      "name": "08. Barista Queue - Customer truy cap bi chan RBAC (403)",
+      "name": "09. Barista Queue - Customer truy cap bi chan RBAC (403)",
       "event": [
         {
           "listen": "test",
@@ -444,38 +489,6 @@
               "type": "string"
             }
           ]
-        },
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/barista/orders",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "barista",
-            "orders"
-          ]
-        }
-      },
-      "response": []
-    },
-    {
-      "name": "09. Barista Queue - Khong co JWT (401)",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "auth": {
-          "type": "noauth"
         },
         "method": "GET",
         "header": [],
@@ -596,7 +609,7 @@
       "response": []
     },
     {
-      "name": "12a. Helper - Khoi tao VNPay cho pendingOrderId (202)",
+      "name": "12. Helper - Khoi tao VNPay cho pendingOrderId (202)",
       "event": [
         {
           "listen": "prerequest",
@@ -671,7 +684,7 @@
       "response": []
     },
     {
-      "name": "12b. Helper - Ky VNPay IPN thanh cong neu co vnpayHashSecret (200)",
+      "name": "13. Helper - Ky VNPay IPN thanh cong neu co vnpayHashSecret (200)",
       "event": [
         {
           "listen": "prerequest",
@@ -779,7 +792,7 @@
       "response": []
     },
     {
-      "name": "13. Barista Accept - Nhan don PAID -> PREPARING (200)",
+      "name": "14. Barista Accept - Nhan don PAID -> PREPARING (200)",
       "event": [
         {
           "listen": "test",
@@ -822,7 +835,7 @@
       "response": []
     },
     {
-      "name": "14. Barista Ready - Pha xong PREPARING -> READY (200)",
+      "name": "15. Barista Ready - Pha xong PREPARING -> READY (200)",
       "event": [
         {
           "listen": "test",
@@ -865,7 +878,7 @@
       "response": []
     },
     {
-      "name": "15. Barista Complete - Giao don READY -> COMPLETED (200)",
+      "name": "16. Barista Complete - Giao don READY -> COMPLETED (200)",
       "event": [
         {
           "listen": "test",
@@ -908,7 +921,7 @@
       "response": []
     },
     {
-      "name": "16. Barista Invalid Transition - Chan quay lai tu COMPLETED (409)",
+      "name": "17. Barista Invalid Transition - Chan quay lai tu COMPLETED (409)",
       "event": [
         {
           "listen": "test",

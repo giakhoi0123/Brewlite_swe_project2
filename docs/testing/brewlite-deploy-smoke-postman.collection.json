@@ -8,23 +8,28 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:3005/api"
+      "value": "http://localhost:3005/api",
+      "type": "string"
     },
     {
       "key": "webUrl",
-      "value": "http://localhost:3006"
+      "value": "http://localhost:3006",
+      "type": "string"
     },
     {
       "key": "customerToken",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "customerId",
-      "value": ""
+      "value": "",
+      "type": "string"
     },
     {
       "key": "smokeOrderId",
-      "value": ""
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
