@@ -2,7 +2,7 @@
   "info": {
     "name": "BrewLite - Payments & VNPay Sandbox BE Test Suite (Kiet)",
     "_postman_id": "a7b1c2d3-3333-4444-8888-000000000003",
-    "description": "Bo test Postman day du cho module Payments & VNPay Sandbox (FR-05): Idempotency-Key replay/conflict, HMAC-SHA512 IPN (PAID/FAILED/UNKNOWN, RspCode 97/01/04/02/00), Return 302 redirect, va Retry don PAYMENT_FAILED. Dien VNPAY_HASH_SECRET vao bien collection vnpayHashSecret de chay cac test ky that (13..20).",
+    "description": "Bo test Postman day du cho module Payments & VNPay Sandbox (FR-05): Idempotency-Key replay/conflict, HMAC-SHA512 IPN (PAID/FAILED/UNKNOWN, RspCode 97/01/04/02/00), Return 302 redirect, Retry don PAYMENT_FAILED va Polling PAID (200).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -13,6 +13,11 @@
     },
     {
       "key": "customerToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "otherEmail",
       "value": "",
       "type": "string"
     },
@@ -33,6 +38,11 @@
     },
     {
       "key": "idempotencyKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "retryIdempotencyKey",
       "value": "",
       "type": "string"
     },
@@ -58,24 +68,9 @@
     },
     {
       "key": "vnpayHashSecret",
-      "value": "",
+      "value": "TISVGUPNVUDXOKWSHTJZWZKZCMXGNDTH",
       "type": "string",
-      "description": "Dien VNPAY_HASH_SECRET tu .env local de kiem thu IPN/Return co chu ky hop le."
-    },
-    {
-      "key": "vnpOrderInfo",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "vnpPayDate",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "vnpTransactionNo",
-      "value": "",
-      "type": "string"
+      "description": "Gia tri VNPAY_HASH_SECRET Sandbox mac dinh tu .env.example de kiem thu IPN/Return co chu ky hop le."
     },
     {
       "key": "vnpSecureHash",
@@ -95,56 +90,7 @@
   ],
   "item": [
     {
-      "name": "01. Create Payment - Khong co JWT (401)",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "auth": {
-          "type": "noauth"
-        },
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          },
-          {
-            "key": "Idempotency-Key",
-            "value": "{{$guid}}"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"VNPAY\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        },
-        "url": {
-          "raw": "{{baseUrl}}/payments",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "payments"
-          ]
-        }
-      },
-      "response": []
-    },
-    {
-      "name": "02. Login Customer 1 seed account (200)",
+      "name": "01. Login Customer 1 seed account (200)",
       "event": [
         {
           "listen": "test",
@@ -190,7 +136,7 @@
       "response": []
     },
     {
-      "name": "03. Register Customer 2 de test ownership 403 (201)",
+      "name": "02. Register Customer 2 de test ownership 403 (201)",
       "event": [
         {
           "listen": "prerequest",
@@ -243,7 +189,7 @@
       "response": []
     },
     {
-      "name": "04. Create Order PENDING cho Customer 1 (201)",
+      "name": "03. Create Order PENDING cho Customer 1 (201)",
       "event": [
         {
           "listen": "test",
@@ -298,7 +244,7 @@
       "response": []
     },
     {
-      "name": "05. Create Payment - Thieu Idempotency-Key (400)",
+      "name": "04. Create Payment - Thieu Idempotency-Key (400)",
       "event": [
         {
           "listen": "test",
@@ -350,7 +296,7 @@
       "response": []
     },
     {
-      "name": "06. Create Payment - Method khong phai VNPAY (400)",
+      "name": "05. Create Payment - Method khong phai VNPAY (400)",
       "event": [
         {
           "listen": "test",
@@ -387,6 +333,59 @@
         "body": {
           "mode": "raw",
           "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"CARD\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "06. Create Payment - Khong co JWT (401)",
+      "protocolProfileBehavior": {
+        "disableCookies": true
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', () => pm.response.to.have.status(401));",
+              "pm.test('Returns AUTHENTICATION_REQUIRED code', () => pm.expect(pm.response.json().code).to.eql('AUTHENTICATION_REQUIRED'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"VNPAY\"\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -1352,7 +1351,57 @@
       "response": []
     },
     {
-      "name": "20. VNPay IPN - Goi IPN lap lai tren don da chot (RspCode 02)",
+      "name": "20. Get Payment Status - Polling sau khi PAID (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.collectionVariables.get('vnpayHashSecret')) {",
+              "  pm.test('Status code is 200 OK once PAID', () => pm.response.to.have.status(200));",
+              "  const json = pm.response.json();",
+              "  pm.test('Payment and Order statuses are PAID', () => {",
+              "    pm.expect(json.paymentId).to.eql(pm.collectionVariables.get('paymentId'));",
+              "    pm.expect(json.paymentStatus).to.eql('PAID');",
+              "    pm.expect(json.orderStatus).to.eql('PAID');",
+              "    pm.expect(json.resultCode).to.eql('PAYMENT_PAID');",
+              "  });",
+              "} else {",
+              "  pm.test('Without vnpayHashSecret, payment remains PROCESSING (202)', () => pm.response.to.have.status(202));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{customerToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/payments/{{paymentId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "payments",
+            "{{paymentId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "21. VNPay IPN - Goi IPN lap lai tren don da chot (RspCode 02)",
       "event": [
         {
           "listen": "test",
@@ -1425,14 +1474,18 @@
       "response": []
     },
     {
-      "name": "21. Paid Order Guard - Chan thanh toan lan 2 tren don da PAID (409)",
+      "name": "22. Paid Order Guard - Chan thanh toan lan 2 tren don da PAID (409)",
       "event": [
         {
           "listen": "test",
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('Status code is 409 Conflict (ORDER_ALREADY_PAID or unresolved)', () => pm.response.to.have.status(409));"
+              "pm.test('Status code is 409 Conflict', () => pm.response.to.have.status(409));",
+              "const json = pm.response.json();",
+              "if (pm.collectionVariables.get('vnpayHashSecret')) {",
+              "  pm.test('Returns ORDER_ALREADY_PAID code', () => pm.expect(json.code).to.eql('ORDER_ALREADY_PAID'));",
+              "}"
             ]
           }
         }

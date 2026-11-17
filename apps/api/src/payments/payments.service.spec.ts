@@ -410,6 +410,7 @@ describe("PaymentsService", () => {
     expect(payments[0]).toMatchObject({
       status: PaymentStatus.PAID,
       gatewayTxnNo: "14226112",
+      checkoutUrl: null,
     });
     expect(order.status).toBe(OrderStatus.PAID);
     expect(reservation.status).toBe(ReservationStatus.CONSUMED);
